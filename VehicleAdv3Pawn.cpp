@@ -261,7 +261,55 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 	/************************************************************************/
 	/*							New Code                                    */
 	// more car forward at a steady rate (for primary and simulation)
-	GetVehicleMovementComponent()->SetThrottleInput(0.5f); /// TODO set this to a reasonable rate
+	GetVehicleMovementComponent()->SetThrottleInput(0.5f); 
+	if (!bIsCopy)
+	{
+		if (generateDrift)
+		{
+			GetVehicleMovementComponent()->SetSteeringInput(-0.05f); // generate slight drift
+		}
+
+		// check divergence from path
+		if (modelready)
+		{
+			TArray<FTransform> expected = expectedFuture->GetPath();
+			if (AtTickLocation < expected.Num())
+			{
+				FTransform expectedTransform = expected[AtTickLocation];
+				FVector expectedLocation = expectedTransform.GetLocation();
+				AtTickLocation++;
+				FTransform currentTransform = this->GetTransform();
+				FVector currentLocation = currentTransform.GetLocation();
+				FQuat currentRotation = currentTransform.GetRotation();
+				// TODO compare location & check for error
+				float distance = expectedLocation.Dist2D(expectedLocation, currentLocation);
+				if (distance > 100.f && !bLocationErrorFound) // units are in cm, so error is distance > 1m
+				{
+					bLocationErrorFound = true;
+					GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(255, 25, 0), FString::Printf(TEXT("Location Error Detected.")));
+					//GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(255, 25, 0), FString::Printf(TEXT("Location Error Detected. Distance measured: %f"), distance));
+					IdentifyLocationErrorSource(distance, AtTickLocation, expectedTransform);
+				}
+				float rotationDist = currentRotation.AngularDistance(expectedTransform.GetRotation());
+				if (rotationDist > 0.2f && !bRotationErrorFound)
+				{
+					bRotationErrorFound = true;
+					GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("Rotation Error Detected.")));
+					//GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("Rotation Error Detected. Angular Distance measured: %f"), rotationDist));
+					IdentifyRotationErrorSource(rotationDist, AtTickLocation);
+				}
+
+				// TODO only finds error on first iteration...
+			}
+		}
+	}
+
+	// save path data for copies
+	if (bIsCopy)
+	{
+		PathLocations.Add(this->GetTransform());
+		VelocityAlongPath.Add(this->GetVelocity());
+	}
 	/************************************************************************/
 
 	// Setup the flag to say we are in reverse gear
@@ -336,6 +384,11 @@ void AVehicleAdv3Pawn::BeginPlay()
 		GetWorldTimerManager().SetTimer(GenerateExpectedTimerHandle, this, &AVehicleAdv3Pawn::GenerateExpected, float(HORIZON) * 2.f, true, 0.f);
 		
 		GetWorldTimerManager().SetTimer(CompareLocationTimerHandle, this, &AVehicleAdv3Pawn::CheckProgress, float(HORIZON) * 2.f, true, 0.f);
+	}
+
+	if (bIsCopy)
+	{
+		//PathLocations.Init(FVector, 0); // TODO should be able to calculate size (horizon / elta time for tick)
 	}
 
 	/************************************************************************/
@@ -417,7 +470,7 @@ void AVehicleAdv3Pawn::ResumeSimulation()
 
 	// save information in a USimulatedData obj
 	UWheeledVehicleMovementComponent* movecomp = this->StoredCopy->GetVehicleMovement();
-	USimulationData* results = USimulationData::MAKE(this->StoredCopy->GetTransform(), movecomp->GetEngineMaxRotationSpeed(), this->GetVelocity(), movecomp->GetCurrentGear());
+	USimulationData* results = USimulationData::MAKE(this->StoredCopy->GetTransform(), movecomp->GetEngineMaxRotationSpeed(), this->GetVelocity(), movecomp->GetCurrentGear(), this->StoredCopy->PathLocations, this->StoredCopy->VelocityAlongPath);
 
 	/* save results for model checking
 	 * TODO this will not be here, not expected future, is instead a possible hypothesis (eventually)
@@ -442,6 +495,8 @@ void AVehicleAdv3Pawn::ResumeSimulation()
 	// destroy temp vehicle
 	this->StoredCopy->Destroy(); // TODO look into this more
 
+	// reset counter for error detection
+	AtTickLocation = 0; // TODO this doesn't seem to be propogating??
 	// TODO reset world state?
 }
 
@@ -453,6 +508,10 @@ void AVehicleAdv3Pawn::GenerateExpected()
 
 	// begin horizon countdown
 	horizonCountdown = true;
+
+	// remove old path data
+	PathLocations.Empty();
+	VelocityAlongPath.Empty();
 
 	this->SetActorTickEnabled(false);
 
@@ -511,7 +570,7 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 
 	// save results for model checking
 	UWheeledVehicleMovementComponent* movecomp = this->StoredCopy->GetVehicleMovement();
-	USimulationData* results = USimulationData::MAKE(this->StoredCopy->GetTransform(), movecomp->GetEngineMaxRotationSpeed(), this->GetVelocity(), movecomp->GetCurrentGear());
+	USimulationData* results = USimulationData::MAKE(this->StoredCopy->GetTransform(), movecomp->GetEngineMaxRotationSpeed(), this->GetVelocity(), movecomp->GetCurrentGear(), this->StoredCopy->PathLocations, this->StoredCopy->VelocityAlongPath);
 	this->expectedFuture = results;
 	modelready = true;
 
@@ -553,6 +612,14 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 		InduceDragError();
 	}
 
+	// reset for error detection
+	AtTickLocation = 0;
+
+	//InduceSteeringError();
+
+	bLocationErrorFound = false;
+	bRotationErrorFound = false;
+
 	//GetWorldTimerManager().UnPauseTimer(GenerateExpectedTimerHandle); 
 }
 
@@ -560,9 +627,18 @@ void AVehicleAdv3Pawn::CheckProgress()
 {
 	if (modelready)
 	{
+		// TODO use path <-- would need to do not here but in tick (or at some timer called interval measure)
+
+		// TODO use difference in rotation/yaw
+
+		// TODO for distance measure, make more detailed comparision (is it far away in X or Y axis?) <-- steering and/or throttle issue
+
+		// TODO maybe come up with this error measures then put into decision tree?
+
 		FVector expectedlocation = this->expectedFuture->GetTransform().GetLocation();
 		FVector currentlocation = this->GetTransform().GetLocation();
-		// TODO pick threshold
+		
+		// arbitrary threshold
 		float threshold = 0.5f;
 		// TODO pick similarity measure
 		//float locError = expectedlocation.CosineAngle2D(currentlocation); 
@@ -572,6 +648,47 @@ void AVehicleAdv3Pawn::CheckProgress()
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, TEXT("Error Detected"));
 		}
+	}
+}
+
+void AVehicleAdv3Pawn::IdentifyLocationErrorSource(float distance, int index, FTransform expectedTransform)
+{
+	FTransform currentTransform = this->GetTransform();
+
+	FVector expectedVelocity = this->expectedFuture->GetVelocities()[index];
+	FVector currentVelocity = this->GetVelocity();
+	float expectedSpeed = expectedVelocity.Size();
+	float currentSpeed = currentVelocity.Size();
+	//GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Speed diff %.1f"), expectedSpeed - currentSpeed)	);
+	float threshold = 20.f;
+	if ((currentSpeed - expectedSpeed) > threshold)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, TEXT("Too Fast"));
+	}
+	else if ((expectedSpeed - currentSpeed) > threshold)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, TEXT("Too Slow"));
+	}
+	else
+	{
+		// TODO probably not a speed/throttle error; likely a steering/direction error
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, TEXT("Positional, non-speed error"));
+	}
+
+	// TODO want to determine if this is a throttle issue
+	// first run through some heuristic checks - am i ahead of target or behind? left/right?
+	
+}
+
+void AVehicleAdv3Pawn::IdentifyRotationErrorSource(float angularDistance, int index)
+{
+	// TODO
+	FQuat currentRotation = this->GetTransform().GetRotation();
+	FQuat expectedRotation = this->expectedFuture->GetPath()[index].GetRotation();
+	if (angularDistance > 0.f)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Heading diff %.1f"), angularDistance));
+
 	}
 }
 
@@ -596,14 +713,12 @@ void AVehicleAdv3Pawn::RevertDragError()
 
 void AVehicleAdv3Pawn::InduceSteeringError()
 {
-	// TODO
-	GetVehicleMovementComponent()->SetSteeringInput(0.1f);
+	generateDrift = true;
 }
 
-void AVehicleAdv3Pawn::RevertSteeringError()
+void AVehicleAdv3Pawn::StopInduceSteeringError()
 {
-	// TODO
-	GetVehicleMovementComponent()->SetSteeringInput(0.0f);
+	generateDrift = false;
 
 }
 

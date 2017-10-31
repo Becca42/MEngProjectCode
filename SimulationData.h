@@ -19,21 +19,27 @@ class USimulationData : public UObject {
 	// final transform (pos & location)
 	FTransform transform;
 
-	// final engine rotation
+	/** final engine rotation */
 	float engineRPM;
 
-	// final velocity
+	/** final velocity */
 	FVector velocity;
 
-	// final gear
+	/** final gear */
 	int gear;
+
+	/** transform of simulation vehicle at every tick */
+	TArray<FTransform> path;
+
+	/** speed of simulation vehicle at every tick */
+	TArray<FVector> velocities;
 
 
 public:
 	/* constructor for SimulationData object */
 	USimulationData();
 
-	static USimulationData* MAKE(FTransform tran, float rpm, FVector vel, int g);
+	static USimulationData* MAKE(FTransform tran, float rpm, FVector vel, int g, TArray<FTransform> path, TArray<FVector> velocities);
 
 	/** returns an error measure for given model
 	 * TODO - more complicated implementation
@@ -41,9 +47,17 @@ public:
 	 * @returns float error - linear combination of different in (final) position and velocity */
 	float calculateError(USimulationData& expected);
 
+	/** Stores final transform */
 	FTransform GetTransform();
 
+	/** Stores final velocity */
 	FVector GetVelocity();
+
+	/** Stores sequence of 3D locations sampled at every tick */
+	TArray<FTransform> GetPath();
+
+	/** Returns speed array */
+	TArray<FVector> GetVelocities();
 
 	// TODO destructor
 };
