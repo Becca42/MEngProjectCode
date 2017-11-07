@@ -2,12 +2,7 @@
 
 USimulationData::USimulationData()
 {
-	// TODO
-
-	transform = *(new FTransform());
-	engineRPM = 0.0f;
-	velocity = *(new FVector());
-	gear = 0;
+	bIsReady = false;
 }
 
 USimulationData* USimulationData::MAKE(FTransform transform, float rpm, FVector vel, int g, TArray<FTransform> path, TArray<FVector> speeds)
@@ -19,6 +14,7 @@ USimulationData* USimulationData::MAKE(FTransform transform, float rpm, FVector 
 	newSim->gear = g;
 	newSim->path = path;
 	newSim->velocities = speeds;
+	newSim->bIsReady = true;
 
 	return newSim;
 }
@@ -45,9 +41,9 @@ FVector USimulationData::GetVelocity()
 	return this->velocity;
 }
 
-TArray<FTransform> USimulationData::GetPath()
+TArray<FTransform>* USimulationData::GetPath()
 {
-	return this->path;
+	return &this->path;
 }
 
 TArray<FVector> USimulationData::GetVelocities()

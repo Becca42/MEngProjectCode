@@ -19,6 +19,8 @@
 #include "UObject/ConstructorHelpers.h"
 #include "SimulationData.h"
 #include "DrawDebugHelpers.h"
+#include "CustomRamp.h"
+#include "Kismet/GameplayStatics.h"
 
 // Needed for VR Headset
 #if HMD_MODULE_INCLUDED
@@ -268,47 +270,52 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 		{
 			GetVehicleMovementComponent()->SetSteeringInput(-0.05f); // generate slight drift
 		}
-
 		// check divergence from path
-		if (modelready)
-		{
-			TArray<FTransform> expected = expectedFuture->GetPath();
-			if (AtTickLocation < expected.Num())
-			{
-				FTransform expectedTransform = expected[AtTickLocation];
-				FVector expectedLocation = expectedTransform.GetLocation();
-				AtTickLocation++;
-				FTransform currentTransform = this->GetTransform();
-				FVector currentLocation = currentTransform.GetLocation();
-				FQuat currentRotation = currentTransform.GetRotation();
-				// TODO compare location & check for error
-				float distance = expectedLocation.Dist2D(expectedLocation, currentLocation);
-				if (distance > 100.f && !bLocationErrorFound) // units are in cm, so error is distance > 1m
-				{
-					bLocationErrorFound = true;
-					GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(255, 25, 0), FString::Printf(TEXT("Location Error Detected.")));
-					//GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(255, 25, 0), FString::Printf(TEXT("Location Error Detected. Distance measured: %f"), distance));
-					IdentifyLocationErrorSource(distance, AtTickLocation, expectedTransform);
-				}
-				float rotationDist = currentRotation.AngularDistance(expectedTransform.GetRotation());
-				if (rotationDist > 0.2f && !bRotationErrorFound)
-				{
-					bRotationErrorFound = true;
-					GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("Rotation Error Detected.")));
-					//GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("Rotation Error Detected. Angular Distance measured: %f"), rotationDist));
-					IdentifyRotationErrorSource(rotationDist, AtTickLocation);
-				}
+		if (modelready && expectedFuture->bIsReady)
+		//if (false)
 
-				// TODO only finds error on first iteration...
-			}
+		{
+			//checkf(expectedFuture->GetPath().Num() < 1000, TEXT("TOO BIG 2"));
+
+			TArray<FTransform>* expected = expectedFuture->GetPath(); // TODO breaks game access violation reading location OxFFF...
+			//if (AtTickLocation < expected.Num())
+			//{
+			//	FTransform expectedTransform = expected[AtTickLocation];
+			//	FVector expectedLocation = expectedTransform.GetLocation();
+			//	FTransform currentTransform = this->GetTransform();
+			//	FVector currentLocation = currentTransform.GetLocation();
+			//	FQuat currentRotation = currentTransform.GetRotation();
+			//	// TODO compare location & check for error
+			//	float distance = expectedLocation.Dist2D(expectedLocation, currentLocation);
+			//	if (distance > 100.f && !bLocationErrorFound) // units are in cm, so error is distance > 1m
+			//	{
+			//		bLocationErrorFound = true;
+			//		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(255, 25, 0), FString::Printf(TEXT("Location Error Detected.")));
+			//		//GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(255, 25, 0), FString::Printf(TEXT("Location Error Detected. Distance measured: %f"), distance));
+			//		//IdentifyLocationErrorSource(distance, AtTickLocation, expectedTransform);
+			//	}
+			//	float rotationDist = currentRotation.AngularDistance(expectedTransform.GetRotation());
+			//	if (rotationDist > 0.2f && !bRotationErrorFound)
+			//	{
+			//		bRotationErrorFound = true;
+			//		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("Rotation Error Detected.")));
+			//		//GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("Rotation Error Detected. Angular Distance measured: %f"), rotationDist));
+			//		IdentifyRotationErrorSource(rotationDist, AtTickLocation);
+			//	}
+			//	AtTickLocation++;
+
+			//	// TODO only finds error on first iteration...
+			//}
 		}
 	}
 
 	// save path data for copies
 	if (bIsCopy)
 	{
-		PathLocations.Add(this->GetTransform());
-		VelocityAlongPath.Add(this->GetVelocity());
+		checkf(PathLocations.Num() < 1000, TEXT("TOO BIG 3"));
+
+		//PathLocations.Add(this->GetTransform());
+		//VelocityAlongPath.Add(this->GetVelocity());
 	}
 	/************************************************************************/
 
@@ -476,7 +483,7 @@ void AVehicleAdv3Pawn::ResumeSimulation()
 	 * TODO this will not be here, not expected future, is instead a possible hypothesis (eventually)
 	 * TODO will also want to save information about choices (steering/throttle) and possible more complete path (maybe other extra data)*/
 	this->expectedFuture = results;
-
+	checkf(expectedFuture->GetPath()->Num() < 1000, TEXT("TOO BIG 3"));
 	currentlyPaused = false;
 
 	// clear timer
@@ -528,6 +535,12 @@ void AVehicleAdv3Pawn::GenerateExpected()
 	UWheeledVehicleMovementComponent* moveComp = GetVehicleMovement();
 	float rotSpeed = moveComp->GetEngineRotationSpeed();
 
+	// get all ramps
+	TArray<AActor*> FoundActors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ACustomRamp::StaticClass(), FoundActors);
+
+	// TODO change collision properties of ramps (no collide with simulated vehicle)
+
 	// copy primary vehicle to make temp vehicle
 	FActorSpawnParameters params = FActorSpawnParameters();
 	// make sure copy will be flagged as copy
@@ -572,6 +585,7 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 	UWheeledVehicleMovementComponent* movecomp = this->StoredCopy->GetVehicleMovement();
 	USimulationData* results = USimulationData::MAKE(this->StoredCopy->GetTransform(), movecomp->GetEngineMaxRotationSpeed(), this->GetVelocity(), movecomp->GetCurrentGear(), this->StoredCopy->PathLocations, this->StoredCopy->VelocityAlongPath);
 	this->expectedFuture = results;
+	checkf(expectedFuture->GetPath()->Num() < 1000, TEXT("TOO BIG 1"));
 	modelready = true;
 
 	// clear timer
@@ -607,10 +621,10 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 	);
 
 	// induce drag error
-	if (this->GetVehicleMovementComponent()->DragCoefficient < 3000.f)
+	/*if (this->GetVehicleMovementComponent()->DragCoefficient < 3000.f)
 	{
 		InduceDragError();
-	}
+	}*/
 
 	// reset for error detection
 	AtTickLocation = 0;
@@ -619,6 +633,8 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 
 	bLocationErrorFound = false;
 	bRotationErrorFound = false;
+
+	
 
 	//GetWorldTimerManager().UnPauseTimer(GenerateExpectedTimerHandle); 
 }
@@ -654,7 +670,7 @@ void AVehicleAdv3Pawn::CheckProgress()
 void AVehicleAdv3Pawn::IdentifyLocationErrorSource(float distance, int index, FTransform expectedTransform)
 {
 	FTransform currentTransform = this->GetTransform();
-
+	checkf(expectedFuture->GetPath()->Num() < 1000, TEXT("TOO BIG 1"));
 	FVector expectedVelocity = this->expectedFuture->GetVelocities()[index];
 	FVector currentVelocity = this->GetVelocity();
 	float expectedSpeed = expectedVelocity.Size();
@@ -673,6 +689,7 @@ void AVehicleAdv3Pawn::IdentifyLocationErrorSource(float distance, int index, FT
 	{
 		// TODO probably not a speed/throttle error; likely a steering/direction error
 		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, TEXT("Positional, non-speed error"));
+		// TODO maybe call IdentifyRotationErrorScource()?? if not already called
 	}
 
 	// TODO want to determine if this is a throttle issue
@@ -682,24 +699,31 @@ void AVehicleAdv3Pawn::IdentifyLocationErrorSource(float distance, int index, FT
 
 void AVehicleAdv3Pawn::IdentifyRotationErrorSource(float angularDistance, int index)
 {
-	// TODO
 	FQuat currentRotation = this->GetTransform().GetRotation();
-	FQuat expectedRotation = this->expectedFuture->GetPath()[index].GetRotation();
-	if (angularDistance > 0.f)
+	TArray<FTransform> path = *this->expectedFuture->GetPath();
+	FQuat expectedRotation = path[index].GetRotation();  // out of bounds error on path 
+	float threshold = 10.f; // TODO calibrate threshold
+	// drifting left
+	FVector currentEuler = currentRotation.Euler();
+	FVector expectedEuler = expectedRotation.Euler();
+	float zDiff = expectedEuler.Z - currentEuler.Z;
+	if (zDiff > threshold)
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Heading diff %.1f"), angularDistance));
-
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Z diff (pos) %.1f"), zDiff));
+		//GEngine->AddOnScreenDebugMessage(-1, 100.f, FColor::Black, FString::Printf(TEXT("Heading diff %.1f, cur %s, exp %s"), angularDistance, *currentEuler.ToString(), *expectedEuler.ToString() ));
+	}
+	// drifting right
+	else if (zDiff < -(threshold))
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Z diff %.1f"), zDiff));
 	}
 }
 
 void AVehicleAdv3Pawn::InduceDragError()
 {
-	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, TEXT("INDUCE ERROR"));
-	// TODO induce some kind of internal error (e.g. change drag)
-	//GetVehicleMovement()->DrawDebug(); //TODO need a canvans and shit
 	UWheeledVehicleMovementComponent* moveComp = GetVehicleMovement();
 	float dragCo = moveComp->DragCoefficient;
-	moveComp->InertiaTensorScale; // TODO fuck with this?
+	//moveComp->InertiaTensorScale; // TODO fuck with this?
 	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, FString::Printf(TEXT("Drag Coefficient: %.1f"), dragCo));
 	moveComp->DragCoefficient = 10.0 * dragCo;
 	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Purple, FString::Printf(TEXT("Drag Coefficient New: %.1f"), GetVehicleMovement()->DragCoefficient));
