@@ -5,7 +5,7 @@ USimulationData::USimulationData()
 	bIsReady = false;
 }
 
-USimulationData* USimulationData::MAKE(FTransform transform, float rpm, FVector vel, int g, TArray<FTransform> path, TArray<FVector> speeds)
+USimulationData* USimulationData::MAKE(FTransform transform, float rpm, FVector vel, int g, TArray<FTransform> path, TArray<FVector> speeds, TArray<float> rpms, TArray<FName> landmarks)
 {
 	USimulationData* newSim = NewObject<USimulationData>();
 	newSim->transform = transform;
@@ -14,7 +14,9 @@ USimulationData* USimulationData::MAKE(FTransform transform, float rpm, FVector 
 	newSim->gear = g;
 	newSim->path = path;
 	newSim->velocities = speeds;
+	newSim->rpms = rpms;
 	newSim->bIsReady = true;
+	newSim->landmarks = landmarks;
 
 	return newSim;
 }
@@ -49,4 +51,15 @@ TArray<FTransform>* USimulationData::GetPath()
 TArray<FVector> USimulationData::GetVelocities()
 {
 	return this->velocities;
+}
+
+TArray<float>* USimulationData::GetRMPValues()
+{
+	return &this->rpms;
+}
+
+TArray<FName>* USimulationData::GetLandmarks()
+{
+
+	return &this->landmarks;
 }

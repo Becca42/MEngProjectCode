@@ -21,6 +21,7 @@
 #include "DrawDebugHelpers.h"
 #include "CustomRamp.h"
 #include "Kismet/GameplayStatics.h"
+#include "Landmark.h"
 
 // Needed for VR Headset
 #if HMD_MODULE_INCLUDED
@@ -50,6 +51,9 @@ AVehicleAdv3Pawn::AVehicleAdv3Pawn()
 		
 	static ConstructorHelpers::FObjectFinder<UPhysicalMaterial> NonSlipperyMat(TEXT("/Game/VehicleAdv/PhysicsMaterials/NonSlippery.NonSlippery"));
 	NonSlipperyMaterial = NonSlipperyMat.Object;
+
+	static ConstructorHelpers::FObjectFinder<UPhysicalMaterial> CustomSlipperyMat(TEXT("/Game/VehicleAdv/PhysicsMaterials/CustomSlippery.CustomSlippery"));
+	CustomSlipperyMaterial = CustomSlipperyMat.Object;
 
 	UWheeledVehicleMovementComponent4W* Vehicle4W = CastChecked<UWheeledVehicleMovementComponent4W>(GetVehicleMovement());
 
@@ -264,48 +268,111 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 	/*							New Code                                    */
 	// more car forward at a steady rate (for primary and simulation)
 	GetVehicleMovementComponent()->SetThrottleInput(0.5f); 
+
+	// get current location
+	FTransform currentTransform = this->GetTransform();
+	FVector currentLocation = currentTransform.GetLocation();
+	FQuat currentRotation = currentTransform.GetRotation();
+
+	TArray<FName>* landmarks = expectedFuture->GetLandmarks();
+
+	if (AtTickLocation % 400 == 0)
+	{
+
+		// 'camera' simulation
+		// TODO move as much of this as possible outside of Tick (capsule only needs to be defined and created once)
+		FHitResult output;
+		FVector sweepStart = currentLocation + FVector(0, 0, 10.f);
+		FVector sweepEnd = currentLocation + currentLocation.ForwardVector * 10.f;
+		FCollisionObjectQueryParams params = FCollisionObjectQueryParams(ECC_GameTraceChannel1); // TODO eventually add ignore list for landmarks we don't expect? <-- could use to see how wrong we are	
+		FCollisionShape shape = FCollisionShape::MakeSphere(300.f);
+		// TODO maybe switch to multi hit
+		const FName TraceTag("MyTraceTag");
+		GetWorld()->DebugDrawTraceTag = TraceTag;
+		FCollisionQueryParams CollisionParams;
+		//CollisionParams.TraceTag = TraceTag; 
+		TArray<FHitResult > outputArray;
+		//if (GetWorld()->SweepSingleByObjectType(output, sweepStart, sweepEnd, currentRotation, params, shape, CollisionParams))
+		if (GetWorld()->SweepMultiByObjectType(outputArray, sweepStart, sweepEnd, currentRotation, params, shape, CollisionParams))
+		{
+			// TODO do something on hit
+			//TWeakObjectPtr<AActor> hit = output.Actor;
+			for (int i = 0; i < outputArray.Num(); i++)
+			{
+				TWeakObjectPtr<AActor> hit = outputArray[i].Actor;
+				if (hit->IsValidLowLevelFast())
+				{
+					FName name = hit->GetFName();
+					// for now, just print to screen
+
+					GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::FColor(255, 25, 0), hit->GetHumanReadableName());
+
+					//TODO check if this is the landmark we're supposed to see (if this is not a copy)
+					if (!bIsCopy)
+					{
+						// TODO get list of landmark(s) should be seeing
+						// TODO check name against list
+						FName expectedLandmark = landmarks->operator[](int(AtTickLocation/400));
+						if (name == expectedLandmark)
+						{
+							GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(0, 255, 75), FString::Printf(TEXT("Landmark Seen!")));
+						}
+						else
+						{
+							GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(0, 255, 75), FString::Printf(TEXT("Landmark Miss!")));
+
+						}
+					}
+					// TODO if not a copy, save this landmark to use later
+					else
+					{
+						this->LandmarksAlongPath.Add(name);
+					}
+				}
+			}
+		}
+	}
+
 	if (!bIsCopy)
 	{
-		if (generateDrift)
+		if (bGenerateDrift)
 		{
 			GetVehicleMovementComponent()->SetSteeringInput(-0.05f); // generate slight drift
 		}
 		// check divergence from path
 		if (modelready && expectedFuture->bIsReady)
-		//if (false)
 
 		{
-			//checkf(expectedFuture->GetPath().Num() < 1000, TEXT("TOO BIG 2"));
-
 			TArray<FTransform>* expected = expectedFuture->GetPath(); // TODO breaks game access violation reading location OxFFF...
-			//if (AtTickLocation < expected.Num())
-			//{
-			//	FTransform expectedTransform = expected[AtTickLocation];
-			//	FVector expectedLocation = expectedTransform.GetLocation();
-			//	FTransform currentTransform = this->GetTransform();
-			//	FVector currentLocation = currentTransform.GetLocation();
-			//	FQuat currentRotation = currentTransform.GetRotation();
-			//	// TODO compare location & check for error
-			//	float distance = expectedLocation.Dist2D(expectedLocation, currentLocation);
-			//	if (distance > 100.f && !bLocationErrorFound) // units are in cm, so error is distance > 1m
-			//	{
-			//		bLocationErrorFound = true;
-			//		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(255, 25, 0), FString::Printf(TEXT("Location Error Detected.")));
-			//		//GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(255, 25, 0), FString::Printf(TEXT("Location Error Detected. Distance measured: %f"), distance));
-			//		//IdentifyLocationErrorSource(distance, AtTickLocation, expectedTransform);
-			//	}
-			//	float rotationDist = currentRotation.AngularDistance(expectedTransform.GetRotation());
-			//	if (rotationDist > 0.2f && !bRotationErrorFound)
-			//	{
-			//		bRotationErrorFound = true;
-			//		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("Rotation Error Detected.")));
-			//		//GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("Rotation Error Detected. Angular Distance measured: %f"), rotationDist));
-			//		IdentifyRotationErrorSource(rotationDist, AtTickLocation);
-			//	}
-			//	AtTickLocation++;
+			TArray<float>* expectedRPM = expectedFuture->GetRMPValues();
+			if (AtTickLocation < expected->Num())
+			{
+				FTransform expectedTransform = expected->operator[](AtTickLocation);
+				FVector expectedLocation = expectedTransform.GetLocation();
+				/*FTransform currentTransform = this->GetTransform();
+				FVector currentLocation = currentTransform.GetLocation();
+				FQuat currentRotation = currentTransform.GetRotation();*/
+				// compare location & check for error <== TODO can't do this in practice (don't have precide location knowledge)
+				float distance = expectedLocation.Dist2D(expectedLocation, currentLocation);
+				if (distance > 100.f && !bLocationErrorFound) // units are in cm, so error is distance > 1m
+				{
+					bLocationErrorFound = true;
+					GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(255, 25, 0), FString::Printf(TEXT("Location Error Detected.")));
+					//GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(255, 25, 0), FString::Printf(TEXT("Location Error Detected. Distance measured: %f"), distance));
+					IdentifyLocationErrorSource(distance, AtTickLocation, expectedTransform);
+				}
+				float rotationDist = currentRotation.AngularDistance(expectedTransform.GetRotation());
+				if (rotationDist > 0.2f && !bRotationErrorFound)
+				{
+					bRotationErrorFound = true;
+					GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("Rotation Error Detected.")));
+					//GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("Rotation Error Detected. Angular Distance measured: %f"), rotationDist));
+					IdentifyRotationErrorSource(rotationDist, AtTickLocation);
+				}
+				AtTickLocation++;
 
 			//	// TODO only finds error on first iteration...
-			//}
+			}
 		}
 	}
 
@@ -314,8 +381,9 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 	{
 		checkf(PathLocations.Num() < 1000, TEXT("TOO BIG 3"));
 
-		//PathLocations.Add(this->GetTransform());
-		//VelocityAlongPath.Add(this->GetVelocity());
+		PathLocations.Add(this->GetTransform()); 
+		VelocityAlongPath.Add(this->GetVelocity());
+		RPMAlongPath.Add(GetVehicleMovement()->GetEngineRotationSpeed());
 	}
 	/************************************************************************/
 
@@ -472,39 +540,39 @@ void AVehicleAdv3Pawn::PauseSimulation()
 
 void AVehicleAdv3Pawn::ResumeSimulation()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, FString::SanitizeFloat(this->CustomTimeDilation));
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("RESUME"));
+	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, FString::SanitizeFloat(this->CustomTimeDilation));
+	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("RESUME"));
 
-	// save information in a USimulatedData obj
-	UWheeledVehicleMovementComponent* movecomp = this->StoredCopy->GetVehicleMovement();
-	USimulationData* results = USimulationData::MAKE(this->StoredCopy->GetTransform(), movecomp->GetEngineMaxRotationSpeed(), this->GetVelocity(), movecomp->GetCurrentGear(), this->StoredCopy->PathLocations, this->StoredCopy->VelocityAlongPath);
+	//// save information in a USimulatedData obj
+	//UWheeledVehicleMovementComponent* movecomp = this->StoredCopy->GetVehicleMovement();
+	////USimulationData* results = USimulationData::MAKE(this->StoredCopy->GetTransform(), movecomp->GetEngineMaxRotationSpeed(), this->GetVelocity(), movecomp->GetCurrentGear(), this->StoredCopy->PathLocations, this->StoredCopy->VelocityAlongPath, this->StoredCopy->RPMAlongPath);
 
-	/* save results for model checking
-	 * TODO this will not be here, not expected future, is instead a possible hypothesis (eventually)
-	 * TODO will also want to save information about choices (steering/throttle) and possible more complete path (maybe other extra data)*/
-	this->expectedFuture = results;
-	checkf(expectedFuture->GetPath()->Num() < 1000, TEXT("TOO BIG 3"));
-	currentlyPaused = false;
+	///* save results for model checking
+	// * TODO this will not be here, not expected future, is instead a possible hypothesis (eventually)
+	// * TODO will also want to save information about choices (steering/throttle) and possible more complete path (maybe other extra data)*/
+	//this->expectedFuture = results;
+	//checkf(expectedFuture->GetPath()->Num() < 1000, TEXT("TOO BIG 3"));
+	//currentlyPaused = false;
 
-	// clear timer
-	pauseTimer = 10;
+	//// clear timer
+	//pauseTimer = 10;
 
-	// resume primary vehicle
-	this->SetActorTickEnabled(true);
+	//// resume primary vehicle
+	//this->SetActorTickEnabled(true);
 
-	// reset player controller back to primary
-	AController* controller = this->StoredController;
-	// 	Unposses your current pawn(Controller->UnPossess())
-	controller->UnPossess();
-	// 	Posses the new pawn(Controller->Possess(NewPawn))
-	controller->Possess(this);
+	//// reset player controller back to primary
+	//AController* controller = this->StoredController;
+	//// 	Unposses your current pawn(Controller->UnPossess())
+	//controller->UnPossess();
+	//// 	Posses the new pawn(Controller->Possess(NewPawn))
+	//controller->Possess(this);
 
-	// destroy temp vehicle
-	this->StoredCopy->Destroy(); // TODO look into this more
+	//// destroy temp vehicle
+	//this->StoredCopy->Destroy(); // TODO look into this more
 
-	// reset counter for error detection
-	AtTickLocation = 0; // TODO this doesn't seem to be propogating??
-	// TODO reset world state?
+	//// reset counter for error detection
+	//AtTickLocation = 0; // TODO this doesn't seem to be propogating??
+	//// TODO reset world state?
 }
 
 void AVehicleAdv3Pawn::GenerateExpected()
@@ -535,12 +603,6 @@ void AVehicleAdv3Pawn::GenerateExpected()
 	UWheeledVehicleMovementComponent* moveComp = GetVehicleMovement();
 	float rotSpeed = moveComp->GetEngineRotationSpeed();
 
-	// get all ramps
-	TArray<AActor*> FoundActors;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ACustomRamp::StaticClass(), FoundActors);
-
-	// TODO change collision properties of ramps (no collide with simulated vehicle)
-
 	// copy primary vehicle to make temp vehicle
 	FActorSpawnParameters params = FActorSpawnParameters();
 	// make sure copy will be flagged as copy
@@ -557,6 +619,26 @@ void AVehicleAdv3Pawn::GenerateExpected()
 	moveComp->DragCoefficient = curdrag;
 	FTransform debugc = copy->GetActorTransform();
 	this->StoredCopy = copy;
+
+	// get all ramps
+	TArray<AActor*> FoundActors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ACustomRamp::StaticClass(), FoundActors);
+	 //turn off collision for ramps (no collide with simulated vehicle)
+	for (AActor* ramp : FoundActors)
+	{
+		//TODO
+		copy->MoveIgnoreActorAdd(ramp); // doesn't seem to work
+		if (UStaticMeshComponent* mesh = Cast<UStaticMeshComponent>(ramp->GetRootComponent()))
+		{
+			mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			//if (bLowFrictionOn)
+			//{
+			//	// no slipping for copy
+			//	mesh->SetPhysMaterialOverride(NonSlipperyMaterial);
+			//}
+		}
+		
+	}
 
 	this->GetMesh()->SetAllBodiesSimulatePhysics(false);
 
@@ -578,12 +660,31 @@ void AVehicleAdv3Pawn::GenerateExpected()
 
 void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 {
-	//TODO
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("RESUME FROM EXPECTED"));
+
+	// get all ramps
+	TArray<AActor*> FoundActors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ACustomRamp::StaticClass(), FoundActors);
+	// change collision properties of ramps (no collide with simulated vehicle)
+	for (AActor* ramp : FoundActors)
+	{
+		//copy->MoveIgnoreActorAdd(ramp); // doesn't seem to work
+		if (UStaticMeshComponent* mesh = Cast<UStaticMeshComponent>(ramp->GetRootComponent()))
+		{
+			mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+				// apply low physics if error is induced & not copy
+				//if (bLowFrictionOn)
+				//{
+				//	// TODO apply slippery mat to ramp pieces
+				//	mesh->SetPhysMaterialOverride(CustomSlipperyMaterial);
+				//}
+		}
+		//ramp->GetRootComponent()->SetSimulatePhysics(false); // doesn't even simulate physics >.<
+	}
 
 	// save results for model checking
 	UWheeledVehicleMovementComponent* movecomp = this->StoredCopy->GetVehicleMovement();
-	USimulationData* results = USimulationData::MAKE(this->StoredCopy->GetTransform(), movecomp->GetEngineMaxRotationSpeed(), this->GetVelocity(), movecomp->GetCurrentGear(), this->StoredCopy->PathLocations, this->StoredCopy->VelocityAlongPath);
+	USimulationData* results = USimulationData::MAKE(this->StoredCopy->GetTransform(), movecomp->GetEngineMaxRotationSpeed(), this->GetVelocity(), movecomp->GetCurrentGear(), this->StoredCopy->PathLocations, this->StoredCopy->VelocityAlongPath, this->StoredCopy->RPMAlongPath, this->StoredCopy->LandmarksAlongPath);
 	this->expectedFuture = results;
 	checkf(expectedFuture->GetPath()->Num() < 1000, TEXT("TOO BIG 1"));
 	modelready = true;
@@ -625,6 +726,9 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 	{
 		InduceDragError();
 	}*/
+
+	// change friction
+	//InduceFrictionError();
 
 	// reset for error detection
 	AtTickLocation = 0;
@@ -737,13 +841,20 @@ void AVehicleAdv3Pawn::RevertDragError()
 
 void AVehicleAdv3Pawn::InduceSteeringError()
 {
-	generateDrift = true;
+	bGenerateDrift = true;
 }
 
 void AVehicleAdv3Pawn::StopInduceSteeringError()
 {
-	generateDrift = false;
+	bGenerateDrift = false;
 
+}
+
+void AVehicleAdv3Pawn::InduceFrictionError()
+{
+	GetMesh()->SetPhysMaterialOverride(CustomSlipperyMaterial);
+	
+	bLowFrictionOn = true;
 }
 
 float AVehicleAdv3Pawn::CalculateError(USimulationData& expected)

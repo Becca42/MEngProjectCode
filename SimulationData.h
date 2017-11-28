@@ -1,4 +1,4 @@
-#pragma once
+ #pragma once
 
 #include "SimulationData.generated.h"
 
@@ -32,6 +32,12 @@ class USimulationData : public UObject {
 	/** speed of simulation vehicle at every tick */
 	TArray<FVector> velocities;
 
+	/** rpm at every tick */
+	TArray<float> rpms;
+
+	/** landmarks we should be seeing */
+	// TODO decide if check every tick or just at end <-- if every tick, need to keep track of *when* we should see a given landmark
+	TArray<FName> landmarks;
 
 public:
 
@@ -41,7 +47,7 @@ public:
 	/* constructor for SimulationData object */
 	USimulationData();
 
-	static USimulationData* MAKE(FTransform tran, float rpm, FVector vel, int g, TArray<FTransform> path, TArray<FVector> velocities);
+	static USimulationData* MAKE(FTransform tran, float rpm, FVector vel, int g, TArray<FTransform> path, TArray<FVector> velocities, TArray<float> rpms, TArray<FName> landmarks);
 
 	/** returns an error measure for given model
 	 * TODO - more complicated implementation
@@ -61,5 +67,10 @@ public:
 	/** Returns speed array */
 	TArray<FVector> GetVelocities();
 
-	// TODO destructor
+	/** Returns rpm array */
+	TArray<float>* GetRMPValues();
+
+	/** Returns landmarks array */
+	TArray<FName>* GetLandmarks();
+
 };
