@@ -58,6 +58,7 @@ class AVehicleAdv3Pawn : public AWheeledVehicle
 	AController* StoredController;
 	FVector ResetVelocityLinear;
 	FVector ResetVelocityAngular;
+	float ResetRPM;
 
 	/** information about expected path up to some horizon */
 	USimulationData* expectedFuture;
@@ -199,7 +200,7 @@ public:
 	bool CheckLandmarkHit(TArray<FName>* expectedLandmarks, FName seenLandmark);
 
 	/** Pause simulation of primary vehicle, make call to spawn new vehicle? */
-	void PauseSimulation();
+	//void PauseSimulation();
 
 	/** begin simulation for expected path <-- will be triggered by a timer? */
 	void GenerateExpected();

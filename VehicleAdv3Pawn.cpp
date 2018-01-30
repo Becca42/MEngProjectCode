@@ -205,7 +205,7 @@ void AVehicleAdv3Pawn::SetupPlayerInputComponent(class UInputComponent* PlayerIn
 
 	/************************************************************************/
 	/*                          New Code                                    */
-	PlayerInputComponent->BindAction("PauseSimulation", IE_Pressed, this, &AVehicleAdv3Pawn::PauseSimulation);
+	//PlayerInputComponent->BindAction("PauseSimulation", IE_Pressed, this, &AVehicleAdv3Pawn::PauseSimulation);
 
 	PlayerInputComponent->BindAction("InduceError", IE_Pressed, this, &AVehicleAdv3Pawn::InduceDragError); //TODO change action on click
 	/************************************************************************/
@@ -289,40 +289,43 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 		if (GetWorld()->SweepMultiByObjectType(outputArray, sweepStart, sweepEnd, currentRotation, params, shape, CollisionParams))
 		{
 			TArray<FName> allNames;
-			TArray<FName>* landmarks = expectedFuture->GetLandmarksAtTick(int(AtTickLocation / 400));
-			// didn't see expected number of landmarks for this sweep
-			if (outputArray.Num() != landmarks->Num())
+			if (modelready && expectedFuture->bIsReady)
 			{
-				bCameraErrorFound = true;
-				// TODO check if too few too many? TODO check which landmark(s) missing (happens in next step)?
-			}
-			// loop over trace hits ('seen objects')
-			for (int i = 0; i < outputArray.Num(); i++)
-			{
-				TWeakObjectPtr<AActor> hit = outputArray[i].Actor;
-				if (hit->IsValidLowLevelFast())
+				TArray<FName>* landmarks = expectedFuture->GetLandmarksAtTick(int(AtTickLocation / 400)-1); // TODO access error getting landmarks
+																										  // didn't see expected number of landmarks for this sweep
+				if (outputArray.Num() != landmarks->Num())
 				{
-					FName seenLandmarkName = hit->GetFName();
-					// print what is seen to screen
-					GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::FColor(255, 25, 0), hit->GetHumanReadableName());
-
-					// check if this is the landmark we're supposed to see (if this is not a copy)
-					if (!bIsCopy && expectedFuture->bIsReady)
+					bCameraErrorFound = true;
+					// TODO check if too few too many? TODO check which landmark(s) missing (happens in next step)?
+				}
+				// loop over trace hits ('seen objects')
+				for (int i = 0; i < outputArray.Num(); i++)
+				{
+					TWeakObjectPtr<AActor> hit = outputArray[i].Actor;
+					if (hit->IsValidLowLevelFast())
 					{
+						FName seenLandmarkName = hit->GetFName();
+						// print what is seen to screen
+						//GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::FColor(255, 25, 0), hit->GetHumanReadableName());
 
-						bool hitexpected = CheckLandmarkHit(landmarks, seenLandmarkName);
-						if (!hitexpected)
+						// check if this is the landmark we're supposed to see (if this is not a copy)
+						if (!bIsCopy && expectedFuture->bIsReady)
 						{
-							bCameraErrorFound = true;
+							bool hitexpected = CheckLandmarkHit(landmarks, seenLandmarkName);
+							if (!hitexpected)
+							{
+								bCameraErrorFound = true;
+							}
 						}
-					}
-					// store all landmarks seen on this tick
-					else
-					{
-						allNames.Add(seenLandmarkName);
+						// store all landmarks seen on this tick
+						else
+						{
+							allNames.Add(seenLandmarkName);
+						}
 					}
 				}
 			}
+			
 			// store landmarks seen at index for this tick
 			if (bIsCopy)
 			{
@@ -341,7 +344,7 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 		}
 		if (modelready && expectedFuture->bIsReady)
 		{
-			TArray<FTransform>* expected = expectedFuture->GetPath(); // <-- TODO can't do in reality, can only use for debug
+			TArray<FTransform>* expected = expectedFuture->GetPath(); 
 			TArray<float>* expectedRPM = expectedFuture->GetRMPValues();
 			if (AtTickLocation < expectedRPM->Num())
 			{
@@ -366,7 +369,7 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 				UE_LOG(LogTemp, Warning, TEXT("Expected %.1f"), expectedRPM->operator[](AtTickLocation));
 				UE_LOG(LogTemp, Warning, TEXT("Current %.1f"), this->GetVehicleMovement()->GetEngineRotationSpeed());
 				// (NOTE: real like speedometers word by measuring each tire, so when spinning on slippery ground, speed only goes up if all tires are spinning)
-				if (!bRpmErrorFound && FGenericPlatformMath::Abs(expectedRPM->operator[](AtTickLocation) - this->GetVehicleMovement()->GetEngineRotationSpeed()) > 1.f)
+				if (!bRpmErrorFound && FGenericPlatformMath::Abs(expectedRPM->operator[](AtTickLocation) - this->GetVehicleMovement()->GetEngineRotationSpeed()) > 90.f) // error threshold set empirically 
 				{
 					GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("RPM Error Detected.")));
 					bRpmErrorFound = true;
@@ -496,60 +499,60 @@ bool AVehicleAdv3Pawn::CheckLandmarkHit(TArray<FName>* expectedLandmarks, FName 
 	}
 }
 
-void AVehicleAdv3Pawn::PauseSimulation()
-{
-	//TODO saving for later in project now...
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("PAUSE"));
-	
-	currentlyPaused = true;
-
-	// TODO pause primary vehicle ** see if this can work, maybe try blueprints, since time dilation was a bust**
-	this->SetActorTickEnabled(false);
-	// is definitely not going into tick(), but physics simulation continues...same issue?
-	// could just do that and then switch player controller to new pawn and then back again?
-
-	//Can't use time dilation on this vehicle because of physics coupling, has to be on entire world to effect physics simulation**
-
-	//possessing new pawn: https://answers.unrealengine.com/questions/109205/c-pawn-possession.html
-	AController* controller = this->GetController();
-	this->StoredController = controller;
-	FVector vel = this->GetVelocity();
-	UWheeledVehicleMovementComponent4W* Vehicle4W = CastChecked<UWheeledVehicleMovementComponent4W>(GetVehicleMovement()); //TODO do something with this...
-
-	UWheeledVehicleMovementComponent* moveComp = GetVehicleMovement();
-	float rotSpeed = moveComp->GetEngineRotationSpeed();
-
-	// copy primary vehicle to make temp vehicle
-	FActorSpawnParameters params = FActorSpawnParameters();
-	if (this)
-	{
-		params.Template = this; // <= will probably never work properly (copy all internal params correctly) :p
-	}
-	//params.Template = this; // TODO doing this fucks things up, doesn't spawn in right location anymore, might not be the solution...
-	//AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), this->GetActorTransform(), params);
-	AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), params);
-	copy->bIsCopy = true;
-	this->StoredCopy = copy;
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("HERE"));
-
-	// TODO copy over state to spawned vehicle**
-	// get current speed (heading already copied with transform)
-	copy->GetMesh()->SetPhysicsLinearVelocity(vel);
-
-	UWheeledVehicleMovementComponent* copyMoveComp = copy->GetVehicleMovement();
-	copyMoveComp->SetTargetGear(moveComp->GetCurrentGear(), true);
-
-	//float debugSetRPM = copyMoveComp->SetEngineRotationSpeedByTire(moveComp->GetTireRotationSpeeds());
-	copyMoveComp->SetEngineRotationSpeed(moveComp->GetEngineRotationSpeed());
-	
-	// switch controller to temp vehicle <= controller seems like it might auto-transfer... (hard to tell)
-	controller->UnPossess(); // TODO doesn't seem to be unposessing when using param.template to clone
-	controller->Possess(copy);
-
-	// TODO save world state? <-- simulating on a real robot, the world state would not stay static...
-	// but right now both vehicles are simulation and interacting with the simulated world, so probably 
-	// will need/want a reset (e.g. temp vehicle nudges a block)
-}
+//void AVehicleAdv3Pawn::PauseSimulation()
+//{
+//	//TODO saving for later in project now...
+//	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("PAUSE"));
+//	
+//	currentlyPaused = true;
+//
+//	// TODO pause primary vehicle ** see if this can work, maybe try blueprints, since time dilation was a bust**
+//	this->SetActorTickEnabled(false);
+//	// is definitely not going into tick(), but physics simulation continues...same issue?
+//	// could just do that and then switch player controller to new pawn and then back again?
+//
+//	//Can't use time dilation on this vehicle because of physics coupling, has to be on entire world to effect physics simulation**
+//
+//	//possessing new pawn: https://answers.unrealengine.com/questions/109205/c-pawn-possession.html
+//	AController* controller = this->GetController();
+//	this->StoredController = controller;
+//	FVector vel = this->GetVelocity();
+//	UWheeledVehicleMovementComponent4W* Vehicle4W = CastChecked<UWheeledVehicleMovementComponent4W>(GetVehicleMovement()); //TODO do something with this...
+//
+//	UWheeledVehicleMovementComponent* moveComp = GetVehicleMovement();
+//	float rotSpeed = moveComp->GetEngineRotationSpeed();
+//
+//	// copy primary vehicle to make temp vehicle
+//	FActorSpawnParameters params = FActorSpawnParameters();
+//	if (this)
+//	{
+//		params.Template = this; // <= will probably never work properly (copy all internal params correctly) :p
+//	}
+//	//params.Template = this; // TODO doing this fucks things up, doesn't spawn in right location anymore, might not be the solution...
+//	//AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), this->GetActorTransform(), params);
+//	AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), params);
+//	copy->bIsCopy = true;
+//	this->StoredCopy = copy;
+//	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("HERE"));
+//
+//	// TODO copy over state to spawned vehicle**
+//	// get current speed (heading already copied with transform)
+//	copy->GetMesh()->SetPhysicsLinearVelocity(vel);
+//
+//	UWheeledVehicleMovementComponent* copyMoveComp = copy->GetVehicleMovement();
+//	copyMoveComp->SetTargetGear(moveComp->GetCurrentGear(), true);
+//
+//	//float debugSetRPM = copyMoveComp->SetEngineRotationSpeedByTire(moveComp->GetTireRotationSpeeds());
+//	copyMoveComp->SetEngineRotationSpeed(moveComp->GetEngineRotationSpeed());
+//	
+//	// switch controller to temp vehicle <= controller seems like it might auto-transfer... (hard to tell)
+//	controller->UnPossess(); // TODO doesn't seem to be unposessing when using param.template to clone
+//	controller->Possess(copy);
+//
+//	// TODO save world state? <-- simulating on a real robot, the world state would not stay static...
+//	// but right now both vehicles are simulation and interacting with the simulated world, so probably 
+//	// will need/want a reset (e.g. temp vehicle nudges a block)
+//}
 
 
 void AVehicleAdv3Pawn::GenerateExpected()
@@ -578,7 +581,9 @@ void AVehicleAdv3Pawn::GenerateExpected()
 	UWheeledVehicleMovementComponent4W* Vehicle4W = CastChecked<UWheeledVehicleMovementComponent4W>(GetVehicleMovement()); //TODO do something with this...
 
 	UWheeledVehicleMovementComponent* moveComp = GetVehicleMovement();
-	float rotSpeed = moveComp->GetEngineRotationSpeed();
+	float currRPM = moveComp->GetEngineRotationSpeed();
+	// NOTE Modern automobile engines are typically operated around 2,000–3,000 rpm (33–50 Hz) when cruising, with a minimum (idle) speed around 750–900 rpm (12.5–15 Hz), and an upper limit anywhere from 4500 to 10,000 rpm (75–166 Hz) for a road car
+	this->ResetRPM = currRPM; 
 
 	// copy primary vehicle to make temp vehicle
 	FActorSpawnParameters params = FActorSpawnParameters();
@@ -594,6 +599,7 @@ void AVehicleAdv3Pawn::GenerateExpected()
 	// reset primary state after copying
 	this->bIsCopy = false;
 	moveComp->DragCoefficient = curdrag;
+	moveComp->SetEngineRotationSpeed(currRPM);
 	FTransform debugc = copy->GetActorTransform();
 	this->StoredCopy = copy;
 
@@ -614,7 +620,6 @@ void AVehicleAdv3Pawn::GenerateExpected()
 			//	mesh->SetPhysMaterialOverride(NonSlipperyMaterial);
 			//}
 		}
-		
 	}
 
 	this->GetMesh()->SetAllBodiesSimulatePhysics(false);
@@ -682,7 +687,7 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 	this->GetMesh()->SetAllBodiesSimulatePhysics(true);
 	this->GetMesh()->SetPhysicsLinearVelocity(this->ResetVelocityLinear);
 	this->GetMesh()->SetAllPhysicsAngularVelocity(ResetVelocityAngular);
-
+	this->GetVehicleMovement()->SetEngineRotationSpeed(this->ResetRPM);
 	// destroy temp vehicle
 	this->StoredCopy->Destroy(); // TODO look into this more
 
@@ -731,7 +736,7 @@ bool AVehicleAdv3Pawn::CheckSteeringDrift(int index)
 	return false;
 }
 
-void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingError, bool rpmError)
+void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingError, bool rpmError, bool locationError)
 {
 	/* TODO decide if likely throttle fixable or steering fixable
 	 * maybe make a guess if self or environment?
@@ -784,16 +789,16 @@ void AVehicleAdv3Pawn::IdentifyLocationErrorSource(float distance, int index, FT
 	float threshold = 20.f;
 	if ((currentSpeed - expectedSpeed) > threshold)
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, TEXT("Too Fast"));
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Black, TEXT("Too Fast"));
 	}
 	else if ((expectedSpeed - currentSpeed) > threshold)
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, TEXT("Too Slow"));
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Black, TEXT("Too Slow"));
 	}
 	else
 	{
 		// TODO probably not a speed/throttle error; likely a steering/direction error
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, TEXT("Positional, non-speed error"));
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Black, TEXT("Positional, non-speed error"));
 		// TODO maybe call IdentifyRotationErrorScource()?? if not already called
 	}
 
