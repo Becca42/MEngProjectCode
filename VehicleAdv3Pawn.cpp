@@ -291,46 +291,66 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 			TArray<FName> allNames;
 			if (modelready && expectedFuture->bIsReady)
 			{
-				TArray<FName>* landmarks = expectedFuture->GetLandmarksAtTick(int(AtTickLocation / 400)-1); // TODO access error getting landmarks
-																										  // didn't see expected number of landmarks for this sweep
-				if (outputArray.Num() != landmarks->Num())
-				{
-					bCameraErrorFound = true;
-					// TODO check if too few too many? TODO check which landmark(s) missing (happens in next step)?
+				bool bLandmarksAccessErrorFound = false;
+				TArray<FName>* landmarks = new TArray<FName>();
+				try 
+				{ 
+					landmarks = expectedFuture->GetLandmarksAtTick(int(AtTickLocation / 400)); 
 				}
-				// loop over trace hits ('seen objects')
-				for (int i = 0; i < outputArray.Num(); i++)
+				catch (const std::exception&)
+				{ 
+					bLandmarksAccessErrorFound = true;
+				}
+				 // TODO access error getting landmarks
+																									  // didn't see expected number of landmarks for this sweep
+				if (!bLandmarksAccessErrorFound)
 				{
-					TWeakObjectPtr<AActor> hit = outputArray[i].Actor;
-					if (hit->IsValidLowLevelFast())
+					if (outputArray.Num() != landmarks->Num())
 					{
-						FName seenLandmarkName = hit->GetFName();
-						// print what is seen to screen
-						//GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::FColor(255, 25, 0), hit->GetHumanReadableName());
+						bCameraErrorFound = true;
+						// TODO check if too few too many? TODO check which landmark(s) missing (happens in next step)?
+					}
+					// loop over trace hits ('seen objects')
+					for (int i = 0; i < outputArray.Num(); i++)
+					{
+						TWeakObjectPtr<AActor> hit = outputArray[i].Actor;
+						if (hit->IsValidLowLevelFast())
+						{
+							FName seenLandmarkName = hit->GetFName();
+							// print what is seen to screen
+							//GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::FColor(255, 25, 0), hit->GetHumanReadableName());
 
-						// check if this is the landmark we're supposed to see (if this is not a copy)
-						if (!bIsCopy && expectedFuture->bIsReady)
-						{
-							bool hitexpected = CheckLandmarkHit(landmarks, seenLandmarkName);
-							if (!hitexpected)
+							// check if this is the landmark we're supposed to see (if this is not a copy)
+							if (!bIsCopy && expectedFuture->bIsReady)
 							{
-								bCameraErrorFound = true;
+								bool hitexpected = CheckLandmarkHit(landmarks, seenLandmarkName);
+								if (!hitexpected)
+								{
+									bCameraErrorFound = true;
+								}
 							}
-						}
-						// store all landmarks seen on this tick
-						else
-						{
-							allNames.Add(seenLandmarkName);
+							// store all landmarks seen on this tick
+							else
+							{
+								allNames.Add(seenLandmarkName);
+							}
 						}
 					}
 				}
-			}
+				}
+				
 			
 			// store landmarks seen at index for this tick
 			if (bIsCopy)
 			{
 				this->LandmarksAlongPath.Add(int(AtTickLocation / 400), allNames);
 			}
+		}
+		// add empty array at tick location
+		else if (bIsCopy)
+		{
+			TArray<FName>* em = new TArray<FName>();
+			this->LandmarksAlongPath.Add(int(AtTickLocation / 400), *em);
 		}
 	}
 	bool bRpmErrorFound = false;
@@ -725,15 +745,27 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 }
 
 
-bool AVehicleAdv3Pawn::CheckSteeringDrift(int index)
+TArray<float>* AVehicleAdv3Pawn::RotationErrorInfo(int index)
 {
-	// TODO check rotation
+	TArray<float>* results = new TArray<float>;
 
-	// TODO check landmarks
+	TArray<FTransform>* expected = expectedFuture->GetPath();
+	FTransform currentTransform = this->GetTransform();
+	FQuat currentRotation = currentTransform.GetRotation();
+	FTransform expectedTransform = expected->operator[](AtTickLocation);
 
-	// TODO check position?
+	float angDist = currentRotation.AngularDistance(expectedTransform.GetRotation());
+	results->Add(angDist);
 
-	return false;
+	float currentForwardX = currentRotation.GetForwardVector().X; // X = -0.199136853 ; left X = 0.199502707
+	float expectedForwardX = expectedTransform.GetRotation().GetForwardVector().X; // X = -0.000512242317 ; left X = -0.000133275986
+	float veering = currentForwardX > expectedForwardX ? veering = LEFT : RIGHT; // TODO make sure this words (just like keep an eye on it)
+	results->Add(veering);
+	
+	float dotprod = FVector::DotProduct(expectedTransform.GetRotation().GetForwardVector(), currentRotation.GetForwardVector());
+	results->Add(dotprod);
+
+	return results;
 }
 
 void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingError, bool rpmError, bool locationError)
@@ -742,39 +774,50 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 	 * maybe make a guess if self or environment?
 	 * we have (1) landmarks (2) rpm (3) heading (4) rough positioning with "gps" */
 
-	// DEBUG
-	if (true)
-	{
-		float rpmExpected = expectedFuture->GetRMPValues()->operator[](AtTickLocation); // ~195
-		float rpmCurrent = this->GetVehicleMovement()->GetEngineRotationSpeed(); //567
-		/*UE_LOG(LogTemp, Warning, TEXT("Expected %.1f"), rpmExpected);
-		UE_LOG(LogTemp, Warning, TEXT("Current %.1f"), rpmCurrent);*/
-
-
-		int debug = 1;
-	}
 	// going wrong way, seeing wrong things, at either wrong speed or spinning to hard
-	if (cameraError && headingError && rpmError)
+	if (cameraError && headingError && rpmError && !locationError)
 	{
 		// check how heading differs
-		TArray<FTransform>* expected = expectedFuture->GetPath();
-		FTransform currentTransform = this->GetTransform();
-		FQuat currentRotation = currentTransform.GetRotation();
-		FTransform expectedTransform = expected->operator[](AtTickLocation);
-		float angDist = currentRotation.AngularDistance(expectedTransform.GetRotation());
-		float currentForwardX = currentRotation.GetForwardVector().X; // X = -0.199136853 ; left X = 0.199502707
-		float expectedForwardX = expectedTransform.GetRotation().GetForwardVector().X; // X = -0.000512242317 ; left X = -0.000133275986
-		int veering = currentForwardX > expectedForwardX ? veering = LEFT : RIGHT; // TODO make sure this words (just like keep an eye on it)
-		float dotprod = FVector::DotProduct(expectedTransform.GetRotation().GetForwardVector(), currentRotation.GetForwardVector());
-		// TODO check how rpm differs (too fast or slow)
+		TArray<float>* rotationInfo = RotationErrorInfo(index);
+		float angDist = rotationInfo->operator[](0);
+		float veering = rotationInfo->operator[](1);
+		float dotprod = rotationInfo->operator[](2);
+
+		// check how rpm differs (too fast or slow)
 		float rpmExpected = expectedFuture->GetRMPValues()->operator[](AtTickLocation);
 		float rpmCurrent = this->GetVehicleMovement()->GetEngineRotationSpeed();
+		float rpmDiff = rpmExpected - rpmCurrent;
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Veering %b"), veering));
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Dot Product steering diff %.1f"), dotprod));
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("rpm diff %.1f"), rpmDiff));
+
+		// TODO make sense of camera error
+
 	}
-	// see wrong things but heading right way; probably drag or environment (slope or friction) issue, so throttle issue
-	else if (cameraError && !headingError && !rpmError)
+	// see wrong things but heading right way and in (very roughly) right place; probably drag or environment (slope or friction) issue, so throttle issue
+	else if (cameraError && !headingError && !rpmError && !locationError)
 	{
 		// TODO check rough position?
 		// TODO look into what kind of camera error?(what are we seeing or not seeing wrong)
+	}
+
+	// likely an error to do only with speed, could be drag, terrain, friction; would be throttle correct
+	else if (!cameraError && !headingError && rpmError && !locationError)
+	{
+		// TODO check how rpm differs (too fast or slow)
+		float rpmExpected = expectedFuture->GetRMPValues()->operator[](AtTickLocation);
+		float rpmCurrent = this->GetVehicleMovement()->GetEngineRotationSpeed();
+		float rpmDiff = rpmExpected - rpmCurrent;
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("rpm diff %.1f"), rpmDiff));
+	}
+	// heading wrong way but seeing right things, likely steering error (or friction issue), def steering correct
+	else if (!cameraError && headingError && !rpmError && !locationError)
+	{
+		// check how heading differs
+		TArray<float>* rotationInfo = RotationErrorInfo(index);
+		float angDist = rotationInfo->operator[](0);
+		float veering = rotationInfo->operator[](1);
+		float dotprod = rotationInfo->operator[](2);
 	}
 }
 

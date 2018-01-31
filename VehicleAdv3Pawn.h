@@ -181,8 +181,8 @@ public:
 	const int HEADING = 2;
 	const int LOCATION = 3;
 
-	const int LEFT = 0;
-	const int RIGHT = 1;
+	const float LEFT = -1.f;
+	const float RIGHT = 1.f;
 
 	/** Used to iterate through PathLocation in tick */
 	int AtTickLocation = 0;
@@ -208,20 +208,20 @@ public:
 	/** Resumes primary vehicles, saves information about expected path and destroys temp vehicle */
 	void ResumeExpectedSimulation();
 
-	/* ###################################################################################### */
-	/* ### TODO go through all functions in here, clearly define what they do and get rid ###
-	/* ### of some. Don't need all of these functions for error detection and ID          ###
-
-	/** TODO: check if there is likely a steering drift
+	/** get info about severity of rotation error
 	 * @param index in simulated data where error found
-	 * @return true if steering drift detected, false otherwise */
-	bool CheckSteeringDrift(int index); // <== currently doesn't get called; either delete or call in ErrorTriage
+	 * @return TArray of floats representing (respectively) angular distance (in radians), veering (LEFT/RIGHT), dot product */
+	TArray<float>* RotationErrorInfo(int index); // <== currently doesn't get called; either delete or call in ErrorTriage
 
 	/** TODO: Called when a variable in the current state does not match what is expected in simulation
 	 * @param index - tick where error was found 
 	 TODO make sure this is called async?? */
 	void ErrorTriage(int index, bool cameraError, bool headingError, bool rpmError, bool locationError);
-
+	
+	/* ###################################################################################### */
+	/* ### TODO go through all functions in here, clearly define what they do and get rid ###
+	/* ### of some. Don't need all of these functions for error detection and ID          ###
+	
 	/** TODO: Called when a location error is generated in Tick(), runs a few hypotheses to try and identify error
 	  * e.g. too fast, too slow 
 	  * @param distance between actual and expected
@@ -230,7 +230,7 @@ public:
 	void IdentifyLocationErrorSource(float distance, int index, FTransform expectedTransform);
 
 	/** TODO: Called when a rotation error is generated in Tick(), runs a few hypotheses to try and identify error */
-	void IdentifyRotationErrorSource(float angularDistance, int index);
+	void IdentifyRotationErrorSource(float angularDistance, int index); //<== TODO need this??
 
 	/* ###################################################################################### */
 
