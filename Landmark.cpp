@@ -30,3 +30,12 @@ void ALandmark::Tick(float DeltaTime)
 
 }
 
+bool ALandmark::IsOnLeft()
+{
+	return (this->RoadSide == ERoadSide::ERS_Left);
+}
+
+bool ALandmark::IsOnRight()
+{
+	return (this->RoadSide == ERoadSide::ERS_Right);
+}

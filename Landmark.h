@@ -6,10 +6,21 @@
 #include "GameFramework/Actor.h"
 #include "Landmark.generated.h"
 
+
+UENUM(Meta = (Bitflags))
+enum class ERoadSide
+{
+	ERS_Left,
+	ERS_Right
+};
+
 UCLASS()
 class VEHICLEADV3_API ALandmark : public AActor
 {
 	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Meta = (Bitmask))
+		ERoadSide RoadSide;
 	
 public:	
 	// Sets default values for this actor's properties
@@ -26,6 +37,10 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
-	
+	/** returns true if this landmark is on the left side of the road */
+	bool IsOnLeft();
+
+	/** returns true if this landmark is on the right side of the road */
+	bool IsOnRight();
 	
 };

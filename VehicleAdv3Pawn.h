@@ -175,6 +175,9 @@ public:
 	bool bRotationErrorFound = false;
 	bool bLocationErrorFound = false;
 
+	/** Array of objects seen by camera sweep for use in error identification */
+	TArray<FHitResult > outputArray;
+
 	/** for error triage */
 	const int CAMERA = 0;
 	const int RPM = 1;

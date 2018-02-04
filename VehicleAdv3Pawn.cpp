@@ -285,8 +285,8 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 		FCollisionObjectQueryParams params = FCollisionObjectQueryParams(ECC_GameTraceChannel1);	
 		const FCollisionShape shape = FCollisionShape::MakeSphere(300.f); 
 		FCollisionQueryParams CollisionParams;
-		TArray<FHitResult > outputArray;
-		if (GetWorld()->SweepMultiByObjectType(outputArray, sweepStart, sweepEnd, currentRotation, params, shape, CollisionParams))
+		this->outputArray.Empty();
+		if (GetWorld()->SweepMultiByObjectType(this->outputArray, sweepStart, sweepEnd, currentRotation, params, shape, CollisionParams))
 		{
 			TArray<FName> allNames;
 			if (modelready && expectedFuture->bIsReady)
@@ -301,14 +301,12 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 				{ 
 					bLandmarksAccessErrorFound = true;
 				}
-				 // TODO access error getting landmarks
-																									  // didn't see expected number of landmarks for this sweep
 				if (!bLandmarksAccessErrorFound)
 				{
+					// didn't see expected number of landmarks for this sweep
 					if (outputArray.Num() != landmarks->Num())
 					{
 						bCameraErrorFound = true;
-						// TODO check if too few too many? TODO check which landmark(s) missing (happens in next step)?
 					}
 					// loop over trace hits ('seen objects')
 					for (int i = 0; i < outputArray.Num(); i++)
@@ -317,29 +315,22 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 						if (hit->IsValidLowLevelFast())
 						{
 							FName seenLandmarkName = hit->GetFName();
-							// print what is seen to screen
-							//GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::FColor(255, 25, 0), hit->GetHumanReadableName());
+							allNames.Add(seenLandmarkName);
 
-							// check if this is the landmark we're supposed to see (if this is not a copy)
-							if (!bIsCopy && expectedFuture->bIsReady)
+							// don't need to keep looking if camera error found; offload rest of work 
+							if (!bIsCopy && expectedFuture->bIsReady && !bCameraErrorFound)
 							{
+								// check if this is the landmark we're supposed to see (if this is not a copy)
 								bool hitexpected = CheckLandmarkHit(landmarks, seenLandmarkName);
 								if (!hitexpected)
 								{
 									bCameraErrorFound = true;
 								}
 							}
-							// store all landmarks seen on this tick
-							else
-							{
-								allNames.Add(seenLandmarkName);
-							}
 						}
 					}
 				}
 				}
-				
-			
 			// store landmarks seen at index for this tick
 			if (bIsCopy)
 			{
@@ -519,60 +510,6 @@ bool AVehicleAdv3Pawn::CheckLandmarkHit(TArray<FName>* expectedLandmarks, FName 
 	}
 }
 
-//void AVehicleAdv3Pawn::PauseSimulation()
-//{
-//	//TODO saving for later in project now...
-//	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("PAUSE"));
-//	
-//	currentlyPaused = true;
-//
-//	// TODO pause primary vehicle ** see if this can work, maybe try blueprints, since time dilation was a bust**
-//	this->SetActorTickEnabled(false);
-//	// is definitely not going into tick(), but physics simulation continues...same issue?
-//	// could just do that and then switch player controller to new pawn and then back again?
-//
-//	//Can't use time dilation on this vehicle because of physics coupling, has to be on entire world to effect physics simulation**
-//
-//	//possessing new pawn: https://answers.unrealengine.com/questions/109205/c-pawn-possession.html
-//	AController* controller = this->GetController();
-//	this->StoredController = controller;
-//	FVector vel = this->GetVelocity();
-//	UWheeledVehicleMovementComponent4W* Vehicle4W = CastChecked<UWheeledVehicleMovementComponent4W>(GetVehicleMovement()); //TODO do something with this...
-//
-//	UWheeledVehicleMovementComponent* moveComp = GetVehicleMovement();
-//	float rotSpeed = moveComp->GetEngineRotationSpeed();
-//
-//	// copy primary vehicle to make temp vehicle
-//	FActorSpawnParameters params = FActorSpawnParameters();
-//	if (this)
-//	{
-//		params.Template = this; // <= will probably never work properly (copy all internal params correctly) :p
-//	}
-//	//params.Template = this; // TODO doing this fucks things up, doesn't spawn in right location anymore, might not be the solution...
-//	//AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), this->GetActorTransform(), params);
-//	AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), params);
-//	copy->bIsCopy = true;
-//	this->StoredCopy = copy;
-//	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("HERE"));
-//
-//	// TODO copy over state to spawned vehicle**
-//	// get current speed (heading already copied with transform)
-//	copy->GetMesh()->SetPhysicsLinearVelocity(vel);
-//
-//	UWheeledVehicleMovementComponent* copyMoveComp = copy->GetVehicleMovement();
-//	copyMoveComp->SetTargetGear(moveComp->GetCurrentGear(), true);
-//
-//	//float debugSetRPM = copyMoveComp->SetEngineRotationSpeedByTire(moveComp->GetTireRotationSpeeds());
-//	copyMoveComp->SetEngineRotationSpeed(moveComp->GetEngineRotationSpeed());
-//	
-//	// switch controller to temp vehicle <= controller seems like it might auto-transfer... (hard to tell)
-//	controller->UnPossess(); // TODO doesn't seem to be unposessing when using param.template to clone
-//	controller->Possess(copy);
-//
-//	// TODO save world state? <-- simulating on a real robot, the world state would not stay static...
-//	// but right now both vehicles are simulation and interacting with the simulated world, so probably 
-//	// will need/want a reset (e.g. temp vehicle nudges a block)
-//}
 
 
 void AVehicleAdv3Pawn::GenerateExpected()
@@ -791,7 +728,39 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Dot Product steering diff %.1f"), dotprod));
 		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("rpm diff %.1f"), rpmDiff));
 
-		// TODO make sense of camera error
+		// TODO make sense of camera error (TODO offload to sep func)
+		int missingRight = 0;
+		int missingLeft = 0;
+		int extraRight = 0;
+		int extraLeft = 0;
+		TArray<FName>* landmarks = &LandmarksAlongPath.operator[](index);
+		for (int i = 0; i < outputArray.Num(); i++)
+		{
+			TWeakObjectPtr<AActor> hit = outputArray[i].GetActor();
+			if (hit->IsValidLowLevelFast())
+			{
+				ALandmark* lmhit  = Cast<ALandmark>(outputArray[i].GetActor());
+				FName seenLandmarkName = hit->GetFName();
+				if (expectedFuture->bIsReady)
+				{
+					// seeing things we shouldn't
+					if (!landmarks->Contains(seenLandmarkName))
+					{
+						(lmhit->IsOnLeft()) ? extraLeft++ : extraRight++;
+					}
+					else
+					{
+						// remove seen landmark so we can check what's missing at end
+						landmarks->Remove(seenLandmarkName);
+					}
+				}
+			}
+		}
+		for (int i = 0; i < landmarks->Num(); i++)
+		{
+			ALandmark* lm = Cast<ALandmark>(landmarks[i].GetActor()); // TODO only stored names; should store objs or at least if left/right
+			(lm->IsOnLeft) ? missingLeft++ : missingRight++;
+		}
 
 	}
 	// see wrong things but heading right way and in (very roughly) right place; probably drag or environment (slope or friction) issue, so throttle issue
