@@ -1,11 +1,12 @@
 #include "SimulationData.h"
+#include "Landmark.h"
 
 USimulationData::USimulationData()
 {
 	bIsReady = false;
 }
 
-USimulationData* USimulationData::MAKE(FTransform transform, int g, TArray<FTransform> path, TArray<FVector> speeds, TArray<float> rpms, TMap<int32, TArray<FName>> landmarks)
+USimulationData* USimulationData::MAKE(FTransform transform, int g, TArray<FTransform> path, TArray<FVector> speeds, TArray<float> rpms, TMap<int32, TArray<ALandmark*>> landmarks)
 {
 	USimulationData* newSim = NewObject<USimulationData>();
 	newSim->transform = transform;
@@ -52,7 +53,7 @@ TArray<float>* USimulationData::GetRMPValues()
 	return &this->rpms;
 }
 
-TArray<FName>* USimulationData::GetLandmarksAtTick(int32 tick)
+TArray<ALandmark*>* USimulationData::GetLandmarksAtTick(int32 tick)
 {
 	// TODO add fail case for key not exist?
 	return &this->landmarks[tick];

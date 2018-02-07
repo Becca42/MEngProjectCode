@@ -1,5 +1,6 @@
  #pragma once
 
+#include "Landmark.h"
 #include "SimulationData.generated.h"
 
 UCLASS(config = Game)
@@ -23,7 +24,7 @@ class USimulationData : public UObject {
 	TArray<float> rpms;
 
 	/** landmarks we should be seeing at each tick (keyed by tick) */
-	TMap<int32, TArray<FName>> landmarks;
+	TMap<int32, TArray<ALandmark*>> landmarks;
 
 public:
 
@@ -33,7 +34,7 @@ public:
 	/* constructor for SimulationData object */
 	USimulationData();
 
-	static USimulationData* MAKE(FTransform tran, int g, TArray<FTransform> path, TArray<FVector> velocities, TArray<float> rpms, TMap<int32, TArray<FName>> landmarks);
+	static USimulationData* MAKE(FTransform tran, int g, TArray<FTransform> path, TArray<FVector> velocities, TArray<float> rpms, TMap<int32, TArray<ALandmark*>> landmarks);
 
 	/** returns an error measure for given model
 	 * TODO - more complicated implementation
@@ -57,6 +58,6 @@ public:
 	/** Returns landmarks array
 	 * @param tick at which landmarks were seen
 	 * @returns TArray<FName> array of landmarks seen at given tick*/
-	TArray<FName>* GetLandmarksAtTick(int32 tick);
+	TArray<ALandmark*>* GetLandmarksAtTick(int32 tick);
 
 };
