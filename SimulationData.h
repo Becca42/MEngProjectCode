@@ -60,4 +60,6 @@ public:
 	 * @returns TArray<FName> array of landmarks seen at given tick*/
 	TArray<ALandmark*>* GetLandmarksAtTick(int32 tick);
 
+	bool hasLandmarksAtTick(int32 tick);
+
 };

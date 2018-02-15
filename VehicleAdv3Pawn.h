@@ -7,6 +7,7 @@
 #include "SimulationData.h"
 #include "Landmark.h"
 #include "TestRunData.h"
+#include "CopyVehicleData.h"
 #include "VehicleAdv3Pawn.generated.h"
 
 /************************************************************************/
@@ -21,6 +22,14 @@ enum class ECarType
 	ECT_prediction,
 	ECT_actual,
 	ECT_test
+};
+
+// TODO update/upgrade this as needed as ErrorTriage evolves
+struct SDiagnostics 
+{
+	bool bTryThrottle;
+	bool bTrySteer;
+	bool bDriftLeft;
 };
 /************************************************************************/
 
@@ -177,16 +186,24 @@ public:
 	TArray<FTransform> PathLocations;
 	TArray<FVector> VelocityAlongPath;
 	TArray<float> RPMAlongPath;
-	//TArray<FName> LandmarksAlongPath;
 	TMap<int32, TArray<ALandmark*>> LandmarksAlongPath;
+
+	/* data for spawning vehicles */
+	bool bRunDiagnosticTests;
+	UCopyVehicleData* dataForSpawn;
+	SDiagnostics errorDiagnosticResults;
 
 	/* keep track of error testing results */
 	TestRunData* currentRun;
 	float closestRun;
+	TestRunData* bestRun;
+	bool bLastRun;
+	int runCount;
+	bool bRunningTest;
 
 	const float GPS_ACCURACY = 4.9f; // https://www.gps.gov/systems/gps/performance/accuracy/
 
-	/** Flags for error detection and identification */
+	/* Flags for error detection and identification */
 	bool bRotationErrorFound = false;
 	bool bLocationErrorFound = false;
 
@@ -217,8 +234,8 @@ public:
 	@returns true if seenLandmark is in expectedLandmarks, false otherwise*/
 	bool CheckLandmarkHit(TArray<ALandmark*>* expectedLandmarks, ALandmark* seenLandmark);
 
-	/** Pause simulation of primary vehicle, make call to spawn new vehicle? */
-	//void PauseSimulation();
+	/** determine whether to generate new expected trajectory or do diagnostic testing */
+	void RunTestOrExpect();
 
 	/** begin simulation for expected path <-- will be triggered by a timer? */
 	void GenerateExpected();
@@ -227,7 +244,7 @@ public:
 	void ResumeExpectedSimulation();
 
 	/** TODO */
-	void GenerateDiagnosticRuns(bool bTryThrottle, bool bTrySteer, bool bDriftLeft);
+	void GenerateDiagnosticRuns();
 
 	/** TODO */
 	void ResumeFromDiagnostic();
@@ -244,22 +261,6 @@ public:
 	 * @param index - tick where error was found 
 	 TODO make sure this is called async?? */
 	void ErrorTriage(int index, bool cameraError, bool headingError, bool rpmError, bool locationError);
-	
-	/* ###################################################################################### */
-	/* ### TODO go through all functions in here, clearly define what they do and get rid ###
-	/* ### of some. Don't need all of these functions for error detection and ID          ###
-	
-	/** TODO: Called when a location error is generated in Tick(), runs a few hypotheses to try and identify error
-	  * e.g. too fast, too slow 
-	  * @param distance between actual and expected
-	  * @param index in stored data from hypothesis where error found
-	  * @param expectedTransform expected transform as index generated in simulation*/
-	//void IdentifyLocationErrorSource(float distance, int index, FTransform expectedTransform);
-
-	/** TODO: Called when a rotation error is generated in Tick(), runs a few hypotheses to try and identify error */
-	void IdentifyRotationErrorSource(float angularDistance, int index); //<== TODO need this??
-
-	/* ###################################################################################### */
 
 	/** Induce error (callback for 'I' keypress) by increasing drag 10x */
 	void InduceDragError();

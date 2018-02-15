@@ -6,22 +6,32 @@ UCopyVehicleData::UCopyVehicleData()
 {
 	this->linearVelocity = new FVector;
 	this->angularVelocity = new FVector;
-	this->startPosition = new FTransform;
-
+	this->startPosition = FTransform::Identity;
+	this->gear = -1;
+	this->rpm = 0.f;
 }
 
-UCopyVehicleData::UCopyVehicleData(FVector* linear, FVector* angular)
+UCopyVehicleData* UCopyVehicleData::MAKE(FVector* linear, FVector* angular)
 {
-	this->linearVelocity = linear;
-	this->angularVelocity = angular;
-	this->startPosition = new FTransform;
+	UCopyVehicleData* newDatum = NewObject<UCopyVehicleData>();
+	newDatum->linearVelocity = linear;
+	newDatum->angularVelocity = angular;
+	newDatum->startPosition = FTransform::Identity;
+	newDatum->gear = -1;
+	newDatum->rpm = 0.f;
+	return newDatum;
 }
 
-UCopyVehicleData::UCopyVehicleData(FVector* linear, FVector* angular, FTransform* start)
+UCopyVehicleData* UCopyVehicleData::MAKE(FVector* linear, FVector* angular, FTransform & start, int32 currentGear, float rpm)
 {
-	this->linearVelocity = linear;
-	this->angularVelocity = angular;
-	this->startPosition = start;
+	UCopyVehicleData* newDatum = NewObject<UCopyVehicleData>();
+	newDatum->linearVelocity = linear;
+	newDatum->angularVelocity = angular;
+	newDatum->startPosition = start;
+	newDatum->gear = currentGear;
+	newDatum->rpm = rpm;
+
+	return newDatum;
 }
 
 FVector* UCopyVehicleData::GetLinearVelocity()
@@ -34,7 +44,17 @@ FVector* UCopyVehicleData::GetAngularVelocity()
 	return this->angularVelocity;
 }
 
-FTransform* UCopyVehicleData::GetStartPosition()
+FTransform UCopyVehicleData::GetStartPosition()
 {
 	return this->startPosition;
+}
+
+int32 UCopyVehicleData::GetGear()
+{
+	return this->gear;
+}
+
+float UCopyVehicleData::GetRpm()
+{
+	return this->rpm;
 }

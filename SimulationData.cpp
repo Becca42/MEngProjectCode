@@ -58,3 +58,10 @@ TArray<ALandmark*>* USimulationData::GetLandmarksAtTick(int32 tick)
 	// TODO add fail case for key not exist?
 	return &this->landmarks[tick];
 }
+
+bool USimulationData::hasLandmarksAtTick(int32 tick)
+{
+	TArray<int32>* keys = new TArray<int32>;
+	this->landmarks.GetKeys(*keys);
+	return keys->Contains(tick);
+}

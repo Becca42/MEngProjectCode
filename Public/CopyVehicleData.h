@@ -16,13 +16,16 @@ class VEHICLEADV3_API UCopyVehicleData : public UObject
 
 	FVector* linearVelocity;
 	FVector* angularVelocity;
-	FTransform* startPosition;
+	FTransform startPosition;
+	int32 gear;
+	float rpm;
 
 public:
 
 	UCopyVehicleData();
-	UCopyVehicleData(FVector* linear, FVector* angular);
-	UCopyVehicleData(FVector* linear, FVector* angular, FTransform* start);
+	
+	static UCopyVehicleData* MAKE(FVector* linear, FVector* angular);
+	static UCopyVehicleData* MAKE(FVector* linear, FVector* angular, FTransform & start, int32 currentGear, float rpm);
 
 
 
@@ -33,6 +36,12 @@ public:
 	FVector* GetAngularVelocity();
 
 	/** @returns startPosition */
-	FTransform* GetStartPosition();
+	FTransform GetStartPosition();
+
+	/** @returns gear */
+	int32 GetGear();
+
+	/** @returns rpm */
+	float GetRpm();
 	
 };

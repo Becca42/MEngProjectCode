@@ -23,6 +23,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Landmark.h"
 #include "TestRunData.h"
+#include "CopyVehicleData.h"
 
 // Needed for VR Headset
 #if HMD_MODULE_INCLUDED
@@ -182,7 +183,7 @@ AVehicleAdv3Pawn::AVehicleAdv3Pawn()
 
 	/************************************************************************/
 	/*						New Code                                        */
-	vehicleType = ECarType::ECT_prediction;
+	vehicleType = ECarType::ECT_actual;
 	/************************************************************************/
 }
 
@@ -277,7 +278,7 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 
 	// periodic camera sweep
 	bool bCameraErrorFound = false;
-	if (AtTickLocation % 400 == 0)
+	if (AtTickLocation % 400 == 0 && vehicleType != ECarType::ECT_test)
 	{
 		// 'camera' simulation
 		FHitResult output;
@@ -294,11 +295,11 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 			{
 				bool bLandmarksAccessErrorFound = false;
 				TArray<ALandmark*>* landmarks = new TArray<ALandmark*>();
-				try 
+				if (expectedFuture->hasLandmarksAtTick(int(AtTickLocation / 400)))
 				{ 
-					landmarks = expectedFuture->GetLandmarksAtTick(int(AtTickLocation / 400)); 
+					landmarks = expectedFuture->GetLandmarksAtTick(int(AtTickLocation / 400)); // TODO triggers error now...???
 				}
-				catch (const std::exception&)
+				else
 				{ 
 					bLandmarksAccessErrorFound = true;
 				}
@@ -467,15 +468,15 @@ void AVehicleAdv3Pawn::BeginPlay()
 
 	horizonCountdown = false;
 	throttleInput = DEFAULT_THROTTLE;
-
+	bRunDiagnosticTests = false;
 
 	// timer for horizon (stops simulation after horizon reached)
 	GetWorldTimerManager().SetTimer(HorizonTimerHandle, this, &AVehicleAdv3Pawn::HorizonTimer, 1.0f, true, 0.f);
 
 	// timer for model generation, generates a new model up to HORIZON every HORIZON seconds -- TODO maybe do at different intervals -- not exactly working, does for HORIZON then immediately spawns another
-	if (vehicleType == ECarType::ECT_actual)
+	if (vehicleType == ECarType::ECT_actual) 
 	{
-		GetWorldTimerManager().SetTimer(GenerateExpectedTimerHandle, this, &AVehicleAdv3Pawn::GenerateExpected, float(HORIZON) * 2.f, true, 0.f);
+		GetWorldTimerManager().SetTimer(GenerateExpectedTimerHandle, this, &AVehicleAdv3Pawn::RunTestOrExpect, float(HORIZON) * 2.f, true, 0.f);
 		
 	}
 	/************************************************************************/
@@ -512,6 +513,19 @@ bool AVehicleAdv3Pawn::CheckLandmarkHit(TArray<ALandmark*>* expectedLandmarks, A
 
 
 
+void AVehicleAdv3Pawn::RunTestOrExpect()
+{
+	if (bRunDiagnosticTests)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("Error Found; Going to do diagnostic runs.")); // TODO get in here but don't spawn anything
+		GenerateDiagnosticRuns();
+	}
+	else
+	{
+		GenerateExpected();
+	}
+}
+
 void AVehicleAdv3Pawn::GenerateExpected()
 {
 	//GetWorldTimerManager().PauseTimer(GenerateExpectedTimerHandle); // TODO does this do anything? -- yes, but maybe something bad...
@@ -529,19 +543,24 @@ void AVehicleAdv3Pawn::GenerateExpected()
 	this->SetActorTickEnabled(false);
 
 	//possessing new pawn: https://answers.unrealengine.com/questions/109205/c-pawn-possession.html
-	AController* controller = this->GetController();
+	AController* controller = this->GetController(); 
 	this->StoredController = controller;
-	FVector linearveloctiy = this->GetMesh()->GetPhysicsLinearVelocity();
-	FVector angularvelocity = this->GetMesh()->GetPhysicsAngularVelocity();
-	this->ResetVelocityLinear = linearveloctiy;
-	this->ResetVelocityAngular = angularvelocity;
-
-	UWheeledVehicleMovementComponent4W* Vehicle4W = CastChecked<UWheeledVehicleMovementComponent4W>(GetVehicleMovement()); //TODO do something with this...
 
 	UWheeledVehicleMovementComponent* moveComp = GetVehicleMovement();
+
+	FVector linearveloctiy = this->GetMesh()->GetPhysicsLinearVelocity();
+	FVector angularvelocity = this->GetMesh()->GetPhysicsAngularVelocity();
+	FTransform currentTransform;
+	//currentTransform = this->GetTransform();
+	currentTransform = this->GetActorTransform();
 	float currRPM = moveComp->GetEngineRotationSpeed();
 	// NOTE Modern automobile engines are typically operated around 2,000–3,000 rpm (33–50 Hz) when cruising, with a minimum (idle) speed around 750–900 rpm (12.5–15 Hz), and an upper limit anywhere from 4500 to 10,000 rpm (75–166 Hz) for a road car
-	this->ResetRPM = currRPM; 
+	this->ResetRPM = currRPM;
+	this->ResetVelocityLinear = linearveloctiy;
+	this->ResetVelocityAngular = angularvelocity;
+	this->dataForSpawn = UCopyVehicleData::MAKE(&linearveloctiy, &angularvelocity, currentTransform, moveComp->GetCurrentGear(), currRPM);
+
+	UWheeledVehicleMovementComponent4W* Vehicle4W = CastChecked<UWheeledVehicleMovementComponent4W>(GetVehicleMovement()); //TODO do something with this...
 
 	// copy primary vehicle to make temp vehicle
 	FActorSpawnParameters params = FActorSpawnParameters();
@@ -552,7 +571,7 @@ void AVehicleAdv3Pawn::GenerateExpected()
 	RevertDragError();
 	params.Template = this;
 	AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), params);
-	//AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), params);
+	copy->vehicleType = ECarType::ECT_prediction;
 	// reset primary state after copying
 	this->vehicleType = ECarType::ECT_actual;
 	moveComp->DragCoefficient = curdrag;
@@ -580,20 +599,23 @@ void AVehicleAdv3Pawn::GenerateExpected()
 
 	this->GetMesh()->SetAllBodiesSimulatePhysics(false);
 
-	// TODO copy over state to spawned vehicle**
+	// copy over state to spawned vehicle**
 	// get current speed (heading already copied with transform)
 	copy->GetMesh()->SetPhysicsLinearVelocity(linearveloctiy);
 	copy->GetMesh()->SetPhysicsAngularVelocity(angularvelocity);
 
-	UWheeledVehicleMovementComponent* copyMoveComp = copy->GetVehicleMovement(); // TODO does thsi change the original?
+	UWheeledVehicleMovementComponent* copyMoveComp = copy->GetVehicleMovement(); // TODO does this change the original?
 	copyMoveComp->SetTargetGear(moveComp->GetCurrentGear(), true);
 
-	//float debugSetRPM = copyMoveComp->SetEngineRotationSpeedByTire(moveComp->GetTireRotationSpeeds());
 	copyMoveComp->SetEngineRotationSpeed(moveComp->GetEngineRotationSpeed());
 
 	// switch controller to temp vehicle <= controller seems like it might auto-transfer... (hard to tell)
-	controller->UnPossess(); // TODO doesn't seem to be unposessing when using param.template to clone
-	controller->Possess(copy);
+	if (controller)
+	{
+		controller->UnPossess(); // TODO read access violation (only when an error has been found, (right before resume?))!! happens when bRunDiagnosticTests is true
+		controller->Possess(copy);
+	}
+	
 }
 
 void AVehicleAdv3Pawn::ResumeExpectedSimulation()
@@ -606,7 +628,6 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 	// change collision properties of ramps (no collide with simulated vehicle)
 	for (AActor* ramp : FoundActors)
 	{
-		//copy->MoveIgnoreActorAdd(ramp); // doesn't seem to work
 		if (UStaticMeshComponent* mesh = Cast<UStaticMeshComponent>(ramp->GetRootComponent()))
 		{
 			mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
@@ -635,12 +656,15 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 	this->SetActorTickEnabled(true);
 
 	// reset player controller back to primary
-	AController* controller = this->StoredController;
+	AController* controller = this->StoredController; // TODO this is null sometimes
 	// 	Unposses your current pawn(Controller->UnPossess())
-	controller->UnPossess();
-	// 	Re-posses main pawn
-	controller->Possess(this);
-	// restart original pawn
+	if (controller)
+	{
+		controller->UnPossess();
+		// 	Re-posses main pawn
+		controller->Possess(this);
+		// restart original pawn
+	}
 	this->GetMesh()->SetAllBodiesSimulatePhysics(true);
 	this->GetMesh()->SetPhysicsLinearVelocity(this->ResetVelocityLinear);
 	this->GetMesh()->SetAllPhysicsAngularVelocity(ResetVelocityAngular);
@@ -678,66 +702,119 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 }
 
 
-void AVehicleAdv3Pawn::GenerateDiagnosticRuns(bool bTryThrottle, bool bTrySteer, bool bDriftLeft)
-{
-	FTransform start = PathLocations[0]; 
-	// TODO get other initial stat conditions needed (e.g.rpm, whatever else)
-	for (int i = 0; i < NUM_TEST_CARS; i++)
+void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
+{   
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("Generating Test Runs"));
+
+	GetWorldTimerManager().PauseTimer(GenerateExpectedTimerHandle);
+	bLastRun = false;
+	// TODO just use counter to det when done testing, should use timer so resume can finish up to keep getting back to spawn code
+	// TODO create a class value counter to keep track of when done running tests
+	runCount--;
+	horizonCountdown = true;
+	bRunningTest = true;
+	// TODO get some of the below outside the for-loop since it'll be the same for each car
+	this->SetActorTickEnabled(false);
+
+	AController* controller = this->GetController();
+	this->StoredController = controller;
+	FActorSpawnParameters params = FActorSpawnParameters();
+	UWheeledVehicleMovementComponent* moveComp = GetVehicleMovement();
+	this->vehicleType = ECarType::ECT_test;
+	float curdrag = moveComp->DragCoefficient;
+	RevertDragError();
+	const FTransform startTransform = dataForSpawn->GetStartPosition();
+	FTransform currentTransform = this->GetActorTransform();
+	this->SetActorTransform(startTransform);
+	params.Template = this;
+	params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), params);
+	// TODO could flag and try teleport...
+	copy->vehicleType = ECarType::ECT_test;
+	this->vehicleType = ECarType::ECT_actual;
+	this->SetActorTransform(currentTransform);
+	// reset primary state after copying <== TODO bother with this here or after spawning all copies? 
+	moveComp->DragCoefficient = curdrag;
+	this->GetMesh()->SetAllBodiesSimulatePhysics(false);
+		
+	//copy->SetActorTransform(*startTransform);
+	copy->GetMesh()->SetPhysicsLinearVelocity(*dataForSpawn->GetLinearVelocity());
+	copy->GetMesh()->SetPhysicsAngularVelocity(*dataForSpawn->GetAngularVelocity());
+	//moveComp->SetEngineRotationSpeed(dataForSpawn->GetRpm());
+	UWheeledVehicleMovementComponent* copyMoveComp = copy->GetVehicleMovement();
+	copyMoveComp->SetTargetGear(moveComp->GetCurrentGear(), true);
+	copyMoveComp->SetEngineRotationSpeed(dataForSpawn->GetRpm());
+	this->StoredCopy = copy;
+
+	// TODO adjust throttle and steering
+	float throttleAdjust = 0.f;
+	float steerAdjust = 0.f;
+	// store what change we're trying and in resume, what it's corresponding result is
+	currentRun = new TestRunData(steerAdjust, throttleAdjust);
+	// switch controller to temp vehicle
+	if (controller)
 	{
-		horizonCountdown = true;
-		while (horizonCountdown)
-		{
-			// TODO spawn car <== TODO get some of the below outside the for-loop since it'll be the same for each car
-			this->SetActorTickEnabled(false);
-
-			AController* controller = this->GetController();
-			this->StoredController = controller;
-			// TODO don't want to give copy these values, want values we used earlier in generate expected
-			FVector linearveloctiy = this->GetMesh()->GetPhysicsLinearVelocity();
-			FVector angularvelocity = this->GetMesh()->GetPhysicsAngularVelocity();
-			this->ResetVelocityLinear = linearveloctiy;
-			this->ResetVelocityAngular = angularvelocity;
-			float currRPM = GetVehicleMovement()->GetEngineRotationSpeed();
-			this->ResetRPM = currRPM;
-			FActorSpawnParameters params = FActorSpawnParameters();
-			UWheeledVehicleMovementComponent* moveComp = GetVehicleMovement();
-			float curdrag = moveComp->DragCoefficient;
-			RevertDragError();
-			params.Template = this;
-			AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), params);
-			// reset primary state after copying <== TODO bother with this here or after spawning all copies? 
-			moveComp->DragCoefficient = curdrag;
-			moveComp->SetEngineRotationSpeed(currRPM);
-			this->StoredCopy = copy;
-
-			// TODO adjust throttle and steering
-			float throttleAdjust = 0.f;
-			float steerAdjust = 0.f;
-			// store what change we're trying and in resume, what it's corresponding result is
-			currentRun = new TestRunData(steerAdjust, throttleAdjust);
-		}
+		controller->UnPossess(); 
+		controller->Possess(copy);
 	}
+	if (runCount == 0)
+	{
+		bRunDiagnosticTests = false;
+	}
+	bLastRun = true;
 }
 
 void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 {
-	// TODO
 	// reset timer
-	horizonCountdown = false;
+	horizonCountdown = false; // TODO maybe reset at end?
 	horizon = HORIZON;
 
 	// restore steering and throttle to defaults/expected
 	throttleInput = DEFAULT_THROTTLE;
 
+	// resume primary vehicle
+	this->SetActorTickEnabled(true);
+
+	// reset player controller back to primary
+	AController* controller = this->StoredController;
+	if (controller)
+	{
+		// 	Unposses your current pawn(Controller->UnPossess())
+		controller->UnPossess(); // TODO nullptr
+								 // 	Re-posses main pawn
+		controller->Possess(this);
+	}
+	// restart original pawn
+	this->GetMesh()->SetAllBodiesSimulatePhysics(true);
+	this->GetMesh()->SetPhysicsLinearVelocity(this->ResetVelocityLinear);
+	this->GetMesh()->SetAllPhysicsAngularVelocity(ResetVelocityAngular);
+	this->GetVehicleMovement()->SetEngineRotationSpeed(this->ResetRPM);
+	// destroy temp vehicle
+
 	// check results
-	// TODO get location of test car
-	// TODO get location of actual car
-	// TODO compute distance
-	/*float finalDistance = TODO;
+	FVector endTest = this->StoredCopy->GetTransform().GetLocation();
+	FVector endLoc = this->expectedFuture->GetPath()->operator[](0).GetLocation();
+	float finalDistance = endLoc.DistXY(endLoc, endTest);
 	if (!closestRun)
 	{
-		closestRun = TODO;
-	}*/
+		closestRun = finalDistance;
+		bestRun = currentRun;
+	}
+	else if (closestRun > finalDistance)
+	{
+		bestRun = currentRun;
+	}
+
+	this->StoredCopy->Destroy();
+	bRunningTest = false;
+	//if (bLastRun)
+	//{
+	//	GetWorldTimerManager().UnPauseTimer(GenerateExpectedTimerHandle); // TODO make sure this works right
+	//	//GenerateExpected(); // TODO do this here? or wait for timer?
+	//}
+	GetWorldTimerManager().UnPauseTimer(GenerateExpectedTimerHandle); // TODO make sure this works right
+
 }
 
 TArray<float>* AVehicleAdv3Pawn::RotationErrorInfo(int index)
@@ -769,7 +846,7 @@ TArray<int>* AVehicleAdv3Pawn::CameraErrorInfo(int index)
 	int missingLeft = 0;
 	int extraRight = 0;
 	int extraLeft = 0;
-	TArray<ALandmark*>* landmarks = &LandmarksAlongPath.operator[](index);
+	TArray<ALandmark*>* landmarks = expectedFuture->GetLandmarksAtTick(index);
 	for (int i = 0; i < outputArray.Num(); i++)
 	{
 		ALandmark* lmhit = Cast<ALandmark>(outputArray[i].GetActor());
@@ -807,7 +884,12 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 {
 	/* TODO decide if likely throttle fixable or steering fixable
 	 * maybe make a guess if self or environment?
-	 * we have (1) landmarks (2) rpm (3) heading (4) rough positioning with "gps" */
+	 * we have (1) landmarks (2) rpm (3) heading (4) rough positioning with "gps"
+	 *
+	 * TODO save the conclusions to use LATER in generate test in errorDiagnosticResults*/
+
+	bRunDiagnosticTests = true;
+	runCount = NUM_TEST_CARS;
 
 	// going wrong way, seeing wrong things, at either wrong speed or spinning to hard
 	if (cameraError && headingError && rpmError && !locationError)
@@ -860,56 +942,6 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 	}
 }
 
-//void AVehicleAdv3Pawn::IdentifyLocationErrorSource(float distance, int index, FTransform expectedTransform)
-//{
-//	FTransform currentTransform = this->GetTransform();
-//	FVector expectedVelocity = this->expectedFuture->GetVelocities()[index];
-//	FVector currentVelocity = this->GetVelocity();
-//	float expectedSpeed = expectedVelocity.Size();
-//	float currentSpeed = currentVelocity.Size();
-//	//GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Speed diff %.1f"), expectedSpeed - currentSpeed)	);
-//	float threshold = 20.f;
-//	if ((currentSpeed - expectedSpeed) > threshold)
-//	{
-//		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Black, TEXT("Too Fast"));
-//	}
-//	else if ((expectedSpeed - currentSpeed) > threshold)
-//	{
-//		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Black, TEXT("Too Slow"));
-//	}
-//	else
-//	{
-//		// TODO probably not a speed/throttle error; likely a steering/direction error
-//		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Black, TEXT("Positional, non-speed error"));
-//		// TODO maybe call IdentifyRotationErrorScource()?? if not already called
-//	}
-//
-//	// TODO want to determine if this is a throttle issue
-//	// first run through some heuristic checks - am i ahead of target or behind? left/right?
-//	
-//}
-
-void AVehicleAdv3Pawn::IdentifyRotationErrorSource(float angularDistance, int index)
-{
-	FQuat currentRotation = this->GetTransform().GetRotation();
-	TArray<FTransform> path = *this->expectedFuture->GetPath();
-	FQuat expectedRotation = path[index].GetRotation();  // out of bounds error on path 
-	float threshold = 10.f; // TODO calibrate threshold
-	// drifting left
-	FVector currentEuler = currentRotation.Euler();
-	FVector expectedEuler = expectedRotation.Euler();
-	float zDiff = expectedEuler.Z - currentEuler.Z;
-	if (zDiff > threshold)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Z diff (pos) %.1f"), zDiff));
-		//GEngine->AddOnScreenDebugMessage(-1, 100.f, FColor::Black, FString::Printf(TEXT("Heading diff %.1f, cur %s, exp %s"), angularDistance, *currentEuler.ToString(), *expectedEuler.ToString() ));
-	}
-	// drifting right
-	else if (zDiff < -(threshold))
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Z diff %.1f"), zDiff));
-	}
-}
 
 void AVehicleAdv3Pawn::InduceDragError()
 {
