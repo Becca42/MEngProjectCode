@@ -34,6 +34,11 @@ UCopyVehicleData* UCopyVehicleData::MAKE(FVector* linear, FVector* angular, FTra
 	return newDatum;
 }
 
+UCopyVehicleData::~UCopyVehicleData()
+{
+
+}
+
 FVector* UCopyVehicleData::GetLinearVelocity()
 {
 	return this->linearVelocity;

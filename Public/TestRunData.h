@@ -3,22 +3,27 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/NoExportTypes.h"
+#include "TestRunData.generated.h"
 
 /**
  * 
  */
-class VEHICLEADV3_API TestRunData
+UCLASS()
+class VEHICLEADV3_API UTestRunData : public UObject
 {
+	GENERATED_BODY()
+
 	float steeringChange;
 	float throttleChange;
-	FTransform* endPoint;
+	FVector endPoint;
 
 public:
-	TestRunData();
-	TestRunData(float steering, float throttle);
-	TestRunData(float steering, float throttle, FTransform* end);
+	UTestRunData();
+	static UTestRunData* MAKE(float steering, float throttle);
+	static UTestRunData* MAKE(float steering, float throttle, FVector & end);
 
-	~TestRunData();
+	~UTestRunData();
 
 	/** @returns steering change */
 	float GetSteeringChange();
@@ -27,8 +32,8 @@ public:
 	float GetThrottleChange();
 
 	/** @returns endpoint */
-	FTransform* GetEndPoint();
+	FVector GetEndPoint();
 
-	/** @param ftransform to set endpoint to */
-	void SetEndPoint(FTransform* endpoint);
+	/** @param FVector to set endpoint to */
+	void SetEndPoint(FVector & endpoint);
 };

@@ -27,6 +27,7 @@ public:
 	static UCopyVehicleData* MAKE(FVector* linear, FVector* angular);
 	static UCopyVehicleData* MAKE(FVector* linear, FVector* angular, FTransform & start, int32 currentGear, float rpm);
 
+	~UCopyVehicleData();
 
 
 	/** @returns linearVelocity */

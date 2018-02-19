@@ -2,47 +2,51 @@
 
 #include "TestRunData.h"
 
-TestRunData::TestRunData()
+UTestRunData::UTestRunData()
 {
 	this->steeringChange = 0.f;
 	this->throttleChange = 0.f;
-	this->endPoint = new FTransform();
+	this->endPoint = FVector::ZeroVector;
 }
 
-TestRunData::TestRunData(float steering, float throttle)
+UTestRunData* UTestRunData::MAKE(float steering, float throttle)
 {
-	this->steeringChange = steering;
-	this->throttleChange = throttle;
-	this->endPoint = new FTransform();
+	UTestRunData* datum = NewObject<UTestRunData>();
+	datum->steeringChange = steering;
+	datum->throttleChange = throttle;
+	datum->endPoint = FVector::ZeroVector;
+	return datum;
 }
 
-TestRunData::TestRunData(float steering, float throttle, FTransform* end)
+UTestRunData* UTestRunData::MAKE(float steering, float throttle, FVector & end)
 {
-	this->steeringChange = steering;
-	this->throttleChange = throttle;
-	this->endPoint = end;
+	UTestRunData* datum = NewObject<UTestRunData>();
+	datum->steeringChange = steering;
+	datum->throttleChange = throttle;
+	datum->endPoint = end;
+	return datum;
 }
 
-TestRunData::~TestRunData()
+UTestRunData::~UTestRunData()
 {
 }
 
-float TestRunData::GetSteeringChange()
+float UTestRunData::GetSteeringChange()
 {
 	return steeringChange;
 }
 
-float TestRunData::GetThrottleChange()
+float UTestRunData::GetThrottleChange()
 {
 	return throttleChange;
 }
 
-FTransform* TestRunData::GetEndPoint()
+FVector UTestRunData::GetEndPoint()
 {
 	return endPoint;
 }
 
-void TestRunData::SetEndPoint(FTransform* endpoint)
+void UTestRunData::SetEndPoint(FVector & endpoint)
 {
 	this->endPoint = endpoint;
 }

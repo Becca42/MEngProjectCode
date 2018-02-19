@@ -380,8 +380,6 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 					GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("Rotation Error Detected.")));
 				}
 				// TODO determine if 1.0 is a good threshold -- TODO figure out why begin with very different values
-				UE_LOG(LogTemp, Warning, TEXT("Expected %.1f"), expectedRPM->operator[](AtTickLocation));
-				UE_LOG(LogTemp, Warning, TEXT("Current %.1f"), this->GetVehicleMovement()->GetEngineRotationSpeed());
 				// (NOTE: real like speedometers word by measuring each tire, so when spinning on slippery ground, speed only goes up if all tires are spinning)
 				if (!bRpmErrorFound && FGenericPlatformMath::Abs(expectedRPM->operator[](AtTickLocation) - this->GetVehicleMovement()->GetEngineRotationSpeed()) > 90.f) // error threshold set empirically 
 				{
@@ -468,6 +466,9 @@ void AVehicleAdv3Pawn::BeginPlay()
 
 	horizonCountdown = false;
 	throttleInput = DEFAULT_THROTTLE;
+	steerInput = DEFAULT_STEER;
+	throttleAdjust = 0.f;
+	steerAdjust = 0.f;
 	bRunDiagnosticTests = false;
 
 	// timer for horizon (stops simulation after horizon reached)
@@ -517,7 +518,7 @@ void AVehicleAdv3Pawn::RunTestOrExpect()
 {
 	if (bRunDiagnosticTests)
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("Error Found; Going to do diagnostic runs.")); // TODO get in here but don't spawn anything
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("Error Found; Going to do diagnostic runs."));
 		GenerateDiagnosticRuns();
 	}
 	else
@@ -558,7 +559,7 @@ void AVehicleAdv3Pawn::GenerateExpected()
 	this->ResetRPM = currRPM;
 	this->ResetVelocityLinear = linearveloctiy;
 	this->ResetVelocityAngular = angularvelocity;
-	this->dataForSpawn = UCopyVehicleData::MAKE(&linearveloctiy, &angularvelocity, currentTransform, moveComp->GetCurrentGear(), currRPM);
+	this->dataForSpawn = UCopyVehicleData::MAKE(&linearveloctiy, &angularvelocity, currentTransform, moveComp->GetCurrentGear(), currRPM); // TODO HELP HELP HELP
 
 	UWheeledVehicleMovementComponent4W* Vehicle4W = CastChecked<UWheeledVehicleMovementComponent4W>(GetVehicleMovement()); //TODO do something with this...
 
@@ -612,7 +613,7 @@ void AVehicleAdv3Pawn::GenerateExpected()
 	// switch controller to temp vehicle <= controller seems like it might auto-transfer... (hard to tell)
 	if (controller)
 	{
-		controller->UnPossess(); // TODO read access violation (only when an error has been found, (right before resume?))!! happens when bRunDiagnosticTests is true
+		controller->UnPossess(); 
 		controller->Possess(copy);
 	}
 	
@@ -705,15 +706,12 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 {   
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("Generating Test Runs"));
-
 	GetWorldTimerManager().PauseTimer(GenerateExpectedTimerHandle);
 	bLastRun = false;
-	// TODO just use counter to det when done testing, should use timer so resume can finish up to keep getting back to spawn code
-	// TODO create a class value counter to keep track of when done running tests
-	runCount--;
+	// keep track of when done running tests
+	runCount--; // resets to original value every time... why?
 	horizonCountdown = true;
-	bRunningTest = true;
-	// TODO get some of the below outside the for-loop since it'll be the same for each car
+	bRunningTest = true; // TODO don't use this
 	this->SetActorTickEnabled(false);
 
 	AController* controller = this->GetController();
@@ -725,14 +723,14 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	RevertDragError();
 	const FTransform startTransform = dataForSpawn->GetStartPosition();
 	FTransform currentTransform = this->GetActorTransform();
-	this->SetActorTransform(startTransform);
+	this->SetActorTransform(startTransform); // commented out for debug
 	params.Template = this;
 	params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), params);
+	AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), params); // TODO IT HURTS MOM
 	// TODO could flag and try teleport...
 	copy->vehicleType = ECarType::ECT_test;
 	this->vehicleType = ECarType::ECT_actual;
-	this->SetActorTransform(currentTransform);
+	this->SetActorTransform(currentTransform); // commented out for debug
 	// reset primary state after copying <== TODO bother with this here or after spawning all copies? 
 	moveComp->DragCoefficient = curdrag;
 	this->GetMesh()->SetAllBodiesSimulatePhysics(false);
@@ -746,11 +744,31 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	copyMoveComp->SetEngineRotationSpeed(dataForSpawn->GetRpm());
 	this->StoredCopy = copy;
 
-	// TODO adjust throttle and steering
-	float throttleAdjust = 0.f;
-	float steerAdjust = 0.f;
+	// TODO_ADJUST adjust throttle and steering (TODO maybe move this to sep function)
+	// TODO pass adjust values through to where they'll be used
+	if (errorDiagnosticResults.bTrySteer)
+	{
+		// TODO figure out if too fast or too slow or don't know
+		throttleAdjust = FMath::RandRange(-10.f, 10.f);
+	}
+	if (errorDiagnosticResults.bTryThrottle)
+	{
+		if (errorDiagnosticResults.drift == RIGHT)
+		{
+			steerAdjust = FMath::RandRange(-5.f, 0.f);
+		}
+		else if (errorDiagnosticResults.drift == LEFT)
+		{
+			steerAdjust = FMath::RandRange(0.f, 5.f);
+		}
+		else
+		{
+			// TODO don't know which way drifting
+			steerAdjust = FMath::RandRange(-5.f, 5.f);
+		}
+	}
 	// store what change we're trying and in resume, what it's corresponding result is
-	currentRun = new TestRunData(steerAdjust, throttleAdjust);
+	currentRun = UTestRunData::MAKE(steerAdjust, throttleAdjust);
 	// switch controller to temp vehicle
 	if (controller)
 	{
@@ -760,8 +778,8 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	if (runCount == 0)
 	{
 		bRunDiagnosticTests = false;
+		bLastRun = true;
 	}
-	bLastRun = true;
 }
 
 void AVehicleAdv3Pawn::ResumeFromDiagnostic()
@@ -781,8 +799,8 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 	if (controller)
 	{
 		// 	Unposses your current pawn(Controller->UnPossess())
-		controller->UnPossess(); // TODO nullptr
-								 // 	Re-posses main pawn
+		controller->UnPossess(); 
+		// 	Re-posses main pawn
 		controller->Possess(this);
 	}
 	// restart original pawn
@@ -794,19 +812,24 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 
 	// check results
 	FVector endTest = this->StoredCopy->GetTransform().GetLocation();
-	FVector endLoc = this->expectedFuture->GetPath()->operator[](0).GetLocation();
+	FVector endLoc = this->expectedFuture->GetPath()->operator[](0).GetLocation(); // TODO why expected future? // ALSO TODO broken/invalid?
+	//FVector endLoc = this->GetActorLocation();
+	// TODO consider doing with transform comparisons (look at rotation and loc instead of just loc)
 	float finalDistance = endLoc.DistXY(endLoc, endTest);
 	if (!closestRun)
 	{
 		closestRun = finalDistance;
 		bestRun = currentRun;
+		bestRun->SetEndPoint(endTest);
 	}
 	else if (closestRun > finalDistance)
 	{
 		bestRun = currentRun;
+		bestRun->SetEndPoint(endTest);
 	}
 
 	this->StoredCopy->Destroy();
+	//this->dataForSpawn->BeginDestroy();
 	bRunningTest = false;
 	//if (bLastRun)
 	//{
@@ -887,7 +910,10 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 	 * we have (1) landmarks (2) rpm (3) heading (4) rough positioning with "gps"
 	 *
 	 * TODO save the conclusions to use LATER in generate test in errorDiagnosticResults*/
-
+	if (this->vehicleType != ECarType::ECT_actual || bRunDiagnosticTests)
+	{
+		return;
+	}
 	bRunDiagnosticTests = true;
 	runCount = NUM_TEST_CARS;
 
