@@ -76,13 +76,16 @@ class AVehicleAdv3Pawn : public AWheeledVehicle
 
 	/************************************************************************/
 	/*                         New Code                                     */
+	UPROPERTY(EditAnywhere)
 	AVehicleAdv3Pawn* StoredCopy;
+	UPROPERTY(EditAnywhere)
 	AController* StoredController;
 	FVector ResetVelocityLinear;
 	FVector ResetVelocityAngular;
 	float ResetRPM;
 
 	/** information about expected path up to some horizon */
+	UPROPERTY(EditAnywhere)
 	USimulationData* expectedFuture;
 
 	/** Handler for pause timer (horizon) */
@@ -194,16 +197,18 @@ public:
 
 	/* data for spawning vehicles */
 	bool bRunDiagnosticTests;
+	
+	UPROPERTY(EditAnywhere)
 	UCopyVehicleData* dataForSpawn;
 	SDiagnostics errorDiagnosticResults;
 
 	/* keep track of error testing results */
+	UPROPERTY(EditAnywhere)
 	UTestRunData* currentRun;
 	float closestRun;
+	UPROPERTY(EditAnywhere)
 	UTestRunData* bestRun;
-	bool bLastRun;
 	int runCount;
-	bool bRunningTest;
 
 	const float GPS_ACCURACY = 4.9f; // https://www.gps.gov/systems/gps/performance/accuracy/
 
