@@ -34,31 +34,31 @@ public:
 	/* constructor for SimulationData object */
 	USimulationData();
 
+	~USimulationData();
+
 	static USimulationData* MAKE(FTransform tran, int g, TArray<FTransform> path, TArray<FVector> velocities, TArray<float> rpms, TMap<int32, TArray<ALandmark*>> landmarks);
 
-	/** returns an error measure for given model
-	 * TODO - more complicated implementation
-	 * @param expected object representing expected outcome
-	 * @returns float error - linear combination of different in (final) position and velocity */
-	float calculateError(USimulationData& expected);
+	/* initialize empty object */
+	void Initialize(FTransform tran, int g, TArray<FTransform> path, TArray<FVector> velocities, TArray<float> rpms, TMap<int32, TArray<ALandmark*>> landmarks);
 
 	/** Stores final transform */
 	FTransform GetTransform();
 
 	/** Stores sequence of 3D locations sampled at every tick
 	 * according to https://www.gps.gov/systems/gps/performance/accuracy/, phone gps is accurate to within a ~4,9m a radius*/
-	TArray<FTransform>* GetPath();
+	TArray<FTransform> GetPath();
 
+	//NTODO: investigate the lack of reference return
 	/** Returns speed array */
 	TArray<FVector> GetVelocities();
 
 	/** Returns rpm array */
-	TArray<float>* GetRMPValues();
+	TArray<float> GetRMPValues();
 
 	/** Returns landmarks array
 	 * @param tick at which landmarks were seen
 	 * @returns TArray<FName> array of landmarks seen at given tick*/
-	TArray<ALandmark*>* GetLandmarksAtTick(int32 tick);
+	TArray<ALandmark*> GetLandmarksAtTick(int32 tick);
 
 	bool hasLandmarksAtTick(int32 tick);
 

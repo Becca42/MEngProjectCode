@@ -19,12 +19,13 @@ UTestRunData* UTestRunData::MAKE(float steering, float throttle)
 }
 
 UTestRunData* UTestRunData::MAKE(float steering, float throttle, FVector & end)
-{
-	UTestRunData* datum = NewObject<UTestRunData>();
-	datum->steeringChange = steering;
-	datum->throttleChange = throttle;
-	datum->endPoint = end;
-	return datum;
+{	
+	TSharedPtr<UTestRunData> newtrdata(NewObject<UTestRunData>());
+	//UTestRunData* datum = NewObject<UTestRunData>();
+	newtrdata->steeringChange = steering;
+	newtrdata->throttleChange = throttle;
+	newtrdata->endPoint = end;
+	return newtrdata.Get();
 }
 
 UTestRunData::~UTestRunData()

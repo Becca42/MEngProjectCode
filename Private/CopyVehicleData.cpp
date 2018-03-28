@@ -4,34 +4,37 @@
 
 UCopyVehicleData::UCopyVehicleData()
 {
-	this->linearVelocity = new FVector;
+	/*this->linearVelocity = new FVector;
 	this->angularVelocity = new FVector;
 	this->startPosition = FTransform::Identity;
 	this->gear = -1;
-	this->rpm = 0.f;
+	this->rpm = 0.f;*/
 }
 
-UCopyVehicleData* UCopyVehicleData::MAKE(FVector* linear, FVector* angular)
+UCopyVehicleData* UCopyVehicleData::MAKE(FVector linear, FVector angular)
 {
-	UCopyVehicleData* newDatum = NewObject<UCopyVehicleData>();
-	newDatum->linearVelocity = linear;
-	newDatum->angularVelocity = angular;
-	newDatum->startPosition = FTransform::Identity;
-	newDatum->gear = -1;
-	newDatum->rpm = 0.f;
-	return newDatum;
+	TSharedPtr<UCopyVehicleData> newvdata(NewObject<UCopyVehicleData>());
+	//UCopyVehicleData* newDatum = NewObject<UCopyVehicleData>();
+	newvdata->linearVelocity = linear;
+	newvdata->angularVelocity = angular;
+	newvdata->startPosition = FTransform::Identity;
+	newvdata->gear = -1;
+	newvdata->rpm = 0.f;
+	return newvdata.Get();
 }
 
-UCopyVehicleData* UCopyVehicleData::MAKE(FVector* linear, FVector* angular, FTransform & start, int32 currentGear, float rpm)
+//NTODO: ptrs??  JK make this an initialize version.  Also get rid of those pointers (linear and angular pass by value)
+UCopyVehicleData* UCopyVehicleData::MAKE(FVector linear, FVector angular, FTransform & start, int32 currentGear, float rpm)
 {
-	UCopyVehicleData* newDatum = NewObject<UCopyVehicleData>();
-	newDatum->linearVelocity = linear;
-	newDatum->angularVelocity = angular;
-	newDatum->startPosition = start;
-	newDatum->gear = currentGear;
-	newDatum->rpm = rpm;
+	TSharedPtr<UCopyVehicleData> newvdata(NewObject<UCopyVehicleData>()); // uses implicit constructor syntax e.g. int two(2);
+	//UCopyVehicleData* newDatum = NewObject<UCopyVehicleData>();
+	newvdata->linearVelocity = linear;
+	newvdata->angularVelocity = angular;
+	newvdata->startPosition = start;
+	newvdata->gear = currentGear;
+	newvdata->rpm = rpm;
 
-	return newDatum;
+	return newvdata.Get();
 }
 
 UCopyVehicleData::~UCopyVehicleData()
@@ -39,12 +42,23 @@ UCopyVehicleData::~UCopyVehicleData()
 
 }
 
-FVector* UCopyVehicleData::GetLinearVelocity()
+void UCopyVehicleData::Initialize(FVector linear, FVector angular, FTransform start, int32 currentGear, float rpm)
+{
+	this->linearVelocity = linear;
+	this->angularVelocity = angular;
+	this->startPosition = start;
+	this->gear = currentGear;
+	this->rpm = rpm;
+}
+
+//NTODO:ptrs?
+FVector UCopyVehicleData::GetLinearVelocity()
 {
 	return this->linearVelocity;
 }
 
-FVector* UCopyVehicleData::GetAngularVelocity()
+//NTODO:ptrs?
+FVector UCopyVehicleData::GetAngularVelocity()
 {
 	return this->angularVelocity;
 }

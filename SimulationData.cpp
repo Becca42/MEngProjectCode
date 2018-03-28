@@ -6,31 +6,40 @@ USimulationData::USimulationData()
 	bIsReady = false;
 }
 
-USimulationData* USimulationData::MAKE(FTransform transform, int g, TArray<FTransform> path, TArray<FVector> speeds, TArray<float> rpms, TMap<int32, TArray<ALandmark*>> landmarks)
+USimulationData::~USimulationData()
 {
-	USimulationData* newSim = NewObject<USimulationData>();
-	newSim->transform = transform;
-	newSim->gear = g;
-	newSim->path = path;
-	newSim->velocities = speeds;
-	newSim->rpms = rpms;
-	newSim->bIsReady = true;
-	newSim->landmarks = landmarks;
 
-	return newSim;
 }
 
-float USimulationData::calculateError(USimulationData& expected)
+//NTODO: investigate copy constructors for TARRAY
+USimulationData* USimulationData::MAKE(FTransform transform, int g, TArray<FTransform> path, TArray<FVector> speeds, TArray<float> rpms, TMap<int32, TArray<ALandmark*>> landmarks)
 {
-	//FTransform trans = this->GetTransform();
-	//FVector veldiff = (expected.GetVelocity()) - (this->GetVelocity()); //TODO this won't compile as is
-	//veldiff = veldiff.GetAbs();
-	//FVector transdiff = expected.GetTransform().GetTranslation() - trans.GetTranslation();
-	//transdiff = transdiff.GetAbs();
-	//float rotdiff = expected.GetTransform().GetRotation().AngularDistance(trans.GetRotation());
+	//NTODO: try a smart pointer to keep this from garbage collection
+	//alt: 
+	TWeakObjectPtr<USimulationData> newsim(NewObject<USimulationData>());
+	//USimulationData* newSim = NewObject<USimulationData>();
+	newsim->transform = transform;
+	newsim->gear = g;
+	newsim->path = path;
+	newsim->velocities = speeds;
+	newsim->rpms = rpms;
+	newsim->bIsReady = true;
+	newsim->landmarks = landmarks;
+	newsim->AddToRoot();
 
-	//return veldiff.Size() + transdiff.Size() + rotdiff;
-	return -1.0;
+	return newsim.Get();
+}
+
+void USimulationData::Initialize(FTransform tran, int g, TArray<FTransform> path, TArray<FVector> velocities, TArray<float> rpms, TMap<int32, TArray<ALandmark*>> landmarks)
+{
+	this->transform = transform;
+	this->gear = g;
+	this->path = path;
+	this->velocities = velocities;
+	this->rpms = rpms;
+	this->bIsReady = true;
+	this->landmarks = landmarks;
+
 }
 
 FTransform USimulationData::GetTransform()
@@ -38,9 +47,10 @@ FTransform USimulationData::GetTransform()
 	return this->transform;
 }
 
-TArray<FTransform>* USimulationData::GetPath()
+//NTODO: return value of array (ret: Tarray<FTransform>)
+TArray<FTransform> USimulationData::GetPath()
 {
-	return &this->path;
+	return this->path;
 }
 
 TArray<FVector> USimulationData::GetVelocities()
@@ -48,15 +58,17 @@ TArray<FVector> USimulationData::GetVelocities()
 	return this->velocities;
 }
 
-TArray<float>* USimulationData::GetRMPValues()
+//NTODO: Return value of array
+TArray<float> USimulationData::GetRMPValues()
 {
-	return &this->rpms;
+	return this->rpms;
 }
 
-TArray<ALandmark*>* USimulationData::GetLandmarksAtTick(int32 tick)
+//NTODO: return a success bool, and pass in pre-created array by ptr to fill
+TArray<ALandmark*> USimulationData::GetLandmarksAtTick(int32 tick)
 {
 	// TODO add fail case for key not exist?
-	return &this->landmarks[tick];
+	return this->landmarks[tick];
 }
 
 bool USimulationData::hasLandmarksAtTick(int32 tick)
@@ -64,4 +76,5 @@ bool USimulationData::hasLandmarksAtTick(int32 tick)
 	TArray<int32>* keys = new TArray<int32>;
 	this->landmarks.GetKeys(*keys);
 	return keys->Contains(tick);
+	//NTODO: mem dealloc
 }

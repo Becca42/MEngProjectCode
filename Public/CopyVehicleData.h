@@ -14,8 +14,9 @@ class VEHICLEADV3_API UCopyVehicleData : public UObject
 {
 	GENERATED_BODY()
 
-	FVector* linearVelocity;
-	FVector* angularVelocity;
+		//NTODO: pointers?
+	FVector linearVelocity;
+	FVector angularVelocity;
 	FTransform startPosition;
 	int32 gear;
 	float rpm;
@@ -24,17 +25,20 @@ public:
 
 	UCopyVehicleData();
 	
-	static UCopyVehicleData* MAKE(FVector* linear, FVector* angular);
-	static UCopyVehicleData* MAKE(FVector* linear, FVector* angular, FTransform & start, int32 currentGear, float rpm);
+	static UCopyVehicleData* MAKE(FVector linear, FVector angular);
+	static UCopyVehicleData* MAKE(FVector linear, FVector angular, FTransform & start, int32 currentGear, float rpm);
 
 	~UCopyVehicleData();
 
+	/* init method (what a normal constructor would do) */
+	void Initialize(FVector linear, FVector angular, FTransform start, int32 currentGear, float rpm);
 
+	//NTODO: ptrs?
 	/** @returns linearVelocity */
-	FVector* GetLinearVelocity();
+	FVector GetLinearVelocity();
 
 	/** @returns angularVelocity */
-	FVector* GetAngularVelocity();
+	FVector GetAngularVelocity();
 
 	/** @returns startPosition */
 	FTransform GetStartPosition();

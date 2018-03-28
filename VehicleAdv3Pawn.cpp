@@ -269,7 +269,7 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 	/************************************************************************/
 	/*							New Code                                    */
 	// more car forward at a steady rate (for primary and simulation)
-	GetVehicleMovementComponent()->SetThrottleInput(throttleInput); 
+	GetVehicleMovementComponent()->SetThrottleInput(throttleInput + throttleAdjust); 
 
 	// get current location
 	FTransform currentTransform = this->GetTransform();
@@ -294,9 +294,12 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 			if (bModelready && expectedFuture->bIsReady)
 			{
 				bool bLandmarksAccessErrorFound = false;
-				TArray<ALandmark*>* landmarks = new TArray<ALandmark*>();
+
+				//NTODO: problematic because 'new TArray' becomes lost balloon (unreferenced allocated memory) <-- RTODO go over this again
+				TArray<ALandmark*> landmarks;
 				if (expectedFuture->hasLandmarksAtTick(int(AtTickLocation / 400)))
 				{ 
+					//NTODO:ptrs?
 					landmarks = expectedFuture->GetLandmarksAtTick(int(AtTickLocation / 400)); // TODO triggers error now...???
 				}
 				else
@@ -306,16 +309,16 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 				if (!bLandmarksAccessErrorFound)
 				{
 					// didn't see expected number of landmarks for this sweep
-					if (outputArray.Num() != landmarks->Num())
+					if (outputArray.Num() != landmarks.Num())
 					{
 						bCameraErrorFound = true;
 					}
 					// loop over trace hits ('seen objects')
-					for (int i = 0; i < outputArray.Num(); i++)
+					for (int i = 0; i < outputArray.Num(); i++) //idiom for this: for (auto hitresult : outputArray) {...}
 					{
 						//TWeakObjectPtr<AActor> hit = outputArray[i].GetActor();
 						ALandmark* lmhit = Cast<ALandmark>(outputArray[i].GetActor());
-						if (lmhit->IsValidLowLevelFast())
+						if (lmhit && lmhit->IsValidLowLevelFast()) //NTODONE: just if(lmhit) will check if NULL first, then you can try dereference operator -> if you need this function
 						{
 							//FName seenLandmarkName = hit->GetFName();
 							allLandmarksSeen.Add(lmhit);
@@ -324,7 +327,7 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 							if (vehicleType == ECarType::ECT_actual && expectedFuture->bIsReady && !bCameraErrorFound)
 							{
 								// check if this is the landmark we're supposed to see (if this is not a copy)
-								bool hitexpected = CheckLandmarkHit(landmarks, lmhit);
+								bool hitexpected = CheckLandmarkHit(&landmarks, lmhit); 
 								if (!hitexpected)
 								{
 									bCameraErrorFound = true;
@@ -333,7 +336,10 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 						}
 					}
 				}
-				}
+
+				// free up memory
+				//delete landmarks; // pretty sure still need this to exist
+			}
 			// store landmarks seen at index for this tick
 			if (vehicleType == ECarType::ECT_prediction)
 			{
@@ -354,15 +360,15 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 	{
 		if (bGenerateDrift)
 		{
-			GetVehicleMovementComponent()->SetSteeringInput(0.05f); // generate slight drift right
+			GetVehicleMovementComponent()->SetSteeringInput(0.05f + steerAdjust); // generate slight drift right
 		}
 		if (bModelready && expectedFuture->bIsReady)
 		{
-			TArray<FTransform>* expected = expectedFuture->GetPath(); 
-			TArray<float>* expectedRPM = expectedFuture->GetRMPValues();
-			if (AtTickLocation < expectedRPM->Num())
+			TArray<FTransform> expected = expectedFuture->GetPath(); 
+			TArray<float> expectedRPM = expectedFuture->GetRMPValues();
+			if (AtTickLocation < expectedRPM.Num())
 			{
-				FTransform expectedTransform = expected->operator[](AtTickLocation);
+				FTransform expectedTransform = expected[AtTickLocation]; // TODO path is empty
 				FVector expectedLocation = expectedTransform.GetLocation();
 
 				// compare location & check for error (accounting for 4m margin of error on gps irl)
@@ -381,7 +387,7 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 				}
 				// TODO determine if 1.0 is a good threshold -- TODO figure out why begin with very different values
 				// (NOTE: real like speedometers word by measuring each tire, so when spinning on slippery ground, speed only goes up if all tires are spinning)
-				if (!bRpmErrorFound && FGenericPlatformMath::Abs(expectedRPM->operator[](AtTickLocation) - this->GetVehicleMovement()->GetEngineRotationSpeed()) > 90.f) // error threshold set empirically 
+				if (!bRpmErrorFound && FGenericPlatformMath::Abs(expectedRPM[AtTickLocation] - this->GetVehicleMovement()->GetEngineRotationSpeed()) > 90.f) // error threshold set empirically 
 				{
 					GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Red, FString::Printf(TEXT("RPM Error Detected.")));
 					bRpmErrorFound = true;
@@ -500,6 +506,12 @@ void AVehicleAdv3Pawn::OnResetVR()
 
 bool AVehicleAdv3Pawn::CheckLandmarkHit(TArray<ALandmark*>* expectedLandmarks, ALandmark* seenLandmark)
 {
+	//NTODONE: may want to check if(expectedlandmarks) for nullptr catching
+	if (!expectedLandmarks)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(255, 0, 0), FString::Printf(TEXT("Error Checking Landmarks - Array is null")));
+		return false;
+	}
 	if (expectedLandmarks->Contains(seenLandmark))
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(0, 255, 75), FString::Printf(TEXT("Landmark Seen!")));
@@ -559,8 +571,14 @@ void AVehicleAdv3Pawn::GenerateExpected()
 	this->ResetRPM = currRPM;
 	this->ResetVelocityLinear = linearveloctiy;
 	this->ResetVelocityAngular = angularvelocity;
-	this->dataForSpawn = UCopyVehicleData::MAKE(&linearveloctiy, &angularvelocity, currentTransform, moveComp->GetCurrentGear(), currRPM); // TODO HELP HELP HELP
-
+	//NTODONE: pass linearveloctiy et al. by value, these balloons get popped at the end of this scope (})
+	//this->dataForSpawn = UCopyVehicleData::MAKE(linearveloctiy, angularvelocity, currentTransform, moveComp->GetCurrentGear(), currRPM); // TODO HELP HELP HELP why is this null?
+	this->dataForSpawn = NewObject<UCopyVehicleData>();
+	dataForSpawn->Initialize(linearveloctiy, angularvelocity, currentTransform, moveComp->GetCurrentGear(), currRPM);
+	if (!dataForSpawn)
+	{
+		int debug = 0;
+	}
 	UWheeledVehicleMovementComponent4W* Vehicle4W = CastChecked<UWheeledVehicleMovementComponent4W>(GetVehicleMovement()); //TODO do something with this...
 
 	// copy primary vehicle to make temp vehicle
@@ -644,8 +662,17 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 
 	// save results for model checking
 	UWheeledVehicleMovementComponent* movecomp = this->StoredCopy->GetVehicleMovement();
-	USimulationData* results = USimulationData::MAKE(this->StoredCopy->GetTransform(), movecomp->GetCurrentGear(), this->StoredCopy->PathLocations, this->StoredCopy->VelocityAlongPath, this->StoredCopy->RPMAlongPath, this->StoredCopy->LandmarksAlongPath);
-	this->expectedFuture = results;
+	this->expectedFuture = USimulationData::MAKE(this->StoredCopy->GetTransform(), movecomp->GetCurrentGear(), this->StoredCopy->PathLocations, this->StoredCopy->VelocityAlongPath, this->StoredCopy->RPMAlongPath, this->StoredCopy->LandmarksAlongPath);
+	//this->expectedFuture = NewObject<USimulationData>();
+	if (!expectedFuture) // TODO why is this null? sometimes
+	{
+		int debug = 0;
+	}
+	//this->expectedFuture->Initialize(this->StoredCopy->GetTransform(), movecomp->GetCurrentGear(), this->StoredCopy->PathLocations, this->StoredCopy->VelocityAlongPath, this->StoredCopy->RPMAlongPath, this->StoredCopy->LandmarksAlongPath);
+	if (/*NTODO:*/ !expectedFuture->IsValidLowLevel()) // TODO why is this null?
+	{
+		int debug = 1;
+	}
 	bModelready = true;
 
 	// clear timer
@@ -676,7 +703,7 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 	// spawn sphere to show predicted final destination
 	DrawDebugSphere(
 		GetWorld(),
-		results->GetTransform().GetLocation(),
+		this->expectedFuture->GetTransform().GetLocation(),
 		40.f,
 		32,
 		FColor(255, 0, 0),
@@ -707,11 +734,9 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 {   
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("Generating Test Runs"));
 	GetWorldTimerManager().PauseTimer(GenerateExpectedTimerHandle);
-	bLastRun = false;
 	// keep track of when done running tests
 	runCount--; // resets to original value every time... why?
 	horizonCountdown = true;
-	bRunningTest = true; // TODO don't use this
 	this->SetActorTickEnabled(false);
 
 	AController* controller = this->GetController();
@@ -721,35 +746,37 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	this->vehicleType = ECarType::ECT_test;
 	float curdrag = moveComp->DragCoefficient;
 	RevertDragError();
-	const FTransform startTransform = dataForSpawn->GetStartPosition();
 	FTransform currentTransform = this->GetActorTransform();
-	this->SetActorTransform(startTransform); // commented out for debug
+	//this->SetActorTransform(dataForSpawn->GetStartPosition()); // commented out for debug -- long term will delete, hacky solution
 	params.Template = this;
 	params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), params); // TODO IT HURTS MOM
+	//FTransform relocateBy = dataForSpawn->GetStartPosition() * currentTransform.Inverse();
+	FTransform relocateBy =  currentTransform.Inverse() * dataForSpawn->GetStartPosition();
+	AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), relocateBy, params); // TODO fails  sometimes (maybe fixed now?)
 	// TODO could flag and try teleport...
+
 	copy->vehicleType = ECarType::ECT_test;
 	this->vehicleType = ECarType::ECT_actual;
-	this->SetActorTransform(currentTransform); // commented out for debug
+	//this->SetActorTransform(currentTransform); // commented out for debug -- long term will delete, hacky solution
 	// reset primary state after copying <== TODO bother with this here or after spawning all copies? 
 	moveComp->DragCoefficient = curdrag;
 	this->GetMesh()->SetAllBodiesSimulatePhysics(false);
-		
-	//copy->SetActorTransform(*startTransform);
-	copy->GetMesh()->SetPhysicsLinearVelocity(*dataForSpawn->GetLinearVelocity());
-	copy->GetMesh()->SetPhysicsAngularVelocity(*dataForSpawn->GetAngularVelocity());
-	//moveComp->SetEngineRotationSpeed(dataForSpawn->GetRpm());
+	if (!dataForSpawn)
+	{
+		int debug = 0;
+	}
+	copy->GetMesh()->SetPhysicsLinearVelocity(dataForSpawn->GetLinearVelocity()); //TODO dataforSpawn is null? randomly on round 2 pt. 3?
+	copy->GetMesh()->SetPhysicsAngularVelocity(dataForSpawn->GetAngularVelocity());
 	UWheeledVehicleMovementComponent* copyMoveComp = copy->GetVehicleMovement();
 	copyMoveComp->SetTargetGear(moveComp->GetCurrentGear(), true);
 	copyMoveComp->SetEngineRotationSpeed(dataForSpawn->GetRpm());
 	this->StoredCopy = copy;
 
-	// TODO_ADJUST adjust throttle and steering (TODO maybe move this to sep function)
-	// TODO pass adjust values through to where they'll be used
+	// adjust throttle and steering (TODO maybe move this to sep function)
 	if (errorDiagnosticResults.bTrySteer)
 	{
 		// TODO figure out if too fast or too slow or don't know
-		throttleAdjust = FMath::RandRange(-10.f, 10.f);
+		throttleAdjust = FMath::RandRange(-5.f, 5.f);
 	}
 	if (errorDiagnosticResults.bTryThrottle)
 	{
@@ -763,12 +790,12 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 		}
 		else
 		{
-			// TODO don't know which way drifting
+			// don't know which way drifting
 			steerAdjust = FMath::RandRange(-5.f, 5.f);
 		}
 	}
 	// store what change we're trying and in resume, what it's corresponding result is
-	currentRun = UTestRunData::MAKE(steerAdjust, throttleAdjust);
+	//currentRun = UTestRunData::MAKE(steerAdjust, throttleAdjust); // commented out for debug
 	// switch controller to temp vehicle
 	if (controller)
 	{
@@ -778,7 +805,6 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	if (runCount == 0)
 	{
 		bRunDiagnosticTests = false;
-		bLastRun = true;
 	}
 }
 
@@ -812,11 +838,11 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 
 	// check results
 	FVector endTest = this->StoredCopy->GetTransform().GetLocation();
-	FVector endLoc = this->expectedFuture->GetPath()->operator[](0).GetLocation(); // TODO why expected future? // ALSO TODO broken/invalid?
+	FVector endLoc = this->expectedFuture->GetPath()[0].GetLocation(); // TODO why expected future? // ALSO TODO broken/invalid?
 	//FVector endLoc = this->GetActorLocation();
 	// TODO consider doing with transform comparisons (look at rotation and loc instead of just loc)
 	float finalDistance = endLoc.DistXY(endLoc, endTest);
-	if (!closestRun)
+	/*if (!closestRun) commented out for debug
 	{
 		closestRun = finalDistance;
 		bestRun = currentRun;
@@ -826,16 +852,10 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 	{
 		bestRun = currentRun;
 		bestRun->SetEndPoint(endTest);
-	}
+	}*/
 
 	this->StoredCopy->Destroy();
 	//this->dataForSpawn->BeginDestroy();
-	bRunningTest = false;
-	//if (bLastRun)
-	//{
-	//	GetWorldTimerManager().UnPauseTimer(GenerateExpectedTimerHandle); // TODO make sure this works right
-	//	//GenerateExpected(); // TODO do this here? or wait for timer?
-	//}
 	GetWorldTimerManager().UnPauseTimer(GenerateExpectedTimerHandle); // TODO make sure this works right
 
 }
@@ -844,10 +864,24 @@ TArray<float>* AVehicleAdv3Pawn::RotationErrorInfo(int index)
 {
 	TArray<float>* results = new TArray<float>;
 
-	TArray<FTransform>* expected = expectedFuture->GetPath();
+	//NTODO: handle possibility of expectedFuture or expected being null?
+	TArray<FTransform> expected = expectedFuture->GetPath();
 	FTransform currentTransform = this->GetTransform();
 	FQuat currentRotation = currentTransform.GetRotation();
-	FTransform expectedTransform = expected->operator[](AtTickLocation);
+	//NTODONE: check if within TArray's Size bounds
+	FTransform expectedTransform;
+	if (AtTickLocation < expected.Num())
+	{
+		expectedTransform = expected[AtTickLocation];
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Error: trying to access transform outside array bounds."));
+		results->Add(0.f);
+		results->Add(0.f);
+		results->Add(0.f);
+		return results;
+	}
 
 	float angDist = currentRotation.AngularDistance(expectedTransform.GetRotation());
 	results->Add(angDist);
@@ -869,7 +903,8 @@ TArray<int>* AVehicleAdv3Pawn::CameraErrorInfo(int index)
 	int missingLeft = 0;
 	int extraRight = 0;
 	int extraLeft = 0;
-	TArray<ALandmark*>* landmarks = expectedFuture->GetLandmarksAtTick(index);
+	//NTODONE: investigate returning this by value
+	TArray<ALandmark*> landmarks = expectedFuture->GetLandmarksAtTick(index);
 	for (int i = 0; i < outputArray.Num(); i++)
 	{
 		ALandmark* lmhit = Cast<ALandmark>(outputArray[i].GetActor());
@@ -878,23 +913,26 @@ TArray<int>* AVehicleAdv3Pawn::CameraErrorInfo(int index)
 			if (expectedFuture->bIsReady)
 			{
 				// seeing things we shouldn't
-				if (!landmarks->Contains(lmhit))
+				if (!landmarks.Contains(lmhit))
 				{
 					(lmhit->IsOnLeft()) ? extraLeft++ : extraRight++;
 				}
 				else
 				{
 					// remove seen landmark so we can check what's missing at end
-					landmarks->Remove(lmhit);
+					landmarks.Remove(lmhit);
 				}
 			}
 		}
 	}
-	for (int i = 0; i < landmarks->Num(); i++)
+	for (int i = 0; i < landmarks.Num(); i++)
 	{
-		ALandmark* lm = landmarks->operator[](i);
+		ALandmark* lm = landmarks[i];
 		(lm->IsOnLeft()) ? missingLeft++ : missingRight++;
 	}
+	// free up memory RTODO: cannot delete since no longer pointer; also how does this now affect ballon problem
+	//delete landmarks; 
+
 	TArray<int>* results = new TArray<int>;
 	results->Add(missingRight);
 	results->Add(missingLeft);
@@ -927,7 +965,7 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 		float dotprod = rotationInfo->operator[](2);
 
 		// check how rpm differs (too fast or slow)
-		float rpmExpected = expectedFuture->GetRMPValues()->operator[](AtTickLocation);
+		float rpmExpected = expectedFuture->GetRMPValues()[AtTickLocation];
 		float rpmCurrent = this->GetVehicleMovement()->GetEngineRotationSpeed();
 		float rpmDiff = rpmExpected - rpmCurrent;
 		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Veering %b"), veering));
@@ -937,25 +975,49 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 		// check seen object differences
 		TArray<int>* camerainfo = CameraErrorInfo(index);
 		// TODO do something with this information about 
-		// if missing left and right, totally in wrong place, maybe too fast or too slow
-		// if only/mostly missing left and/or additional right --> veering right (or later, not turning)
-		// if only/mostly missing right and/or additional left --> verring left (or later, not turning)
 
+		if (camerainfo->operator[](0) < camerainfo->operator[](1) || camerainfo->operator[](2) < camerainfo->operator[](3))
+		{
+			errorDiagnosticResults.drift = RIGHT;
+		}
+		if (camerainfo->operator[](0) > camerainfo->operator[](1) || camerainfo->operator[](2) > camerainfo->operator[](3))
+		{
+			errorDiagnosticResults.drift = LEFT;
+		}
+		errorDiagnosticResults.bTryThrottle = true;
+		errorDiagnosticResults.bTrySteer = true;
+
+		// make sure memory is freed
+		delete rotationInfo;
+		delete camerainfo;
 	}
 	// see wrong things but heading right way and in (very roughly) right place; probably drag or environment (slope or friction) issue, so throttle issue
 	else if (cameraError && !headingError && !rpmError && !locationError)
 	{
 		TArray<int>* camerainfo = CameraErrorInfo(index);
+		if (camerainfo->operator[](0) < camerainfo->operator[](1) || camerainfo->operator[](2) < camerainfo->operator[](3))
+		{
+			errorDiagnosticResults.drift = RIGHT;
+		}
+		if (camerainfo->operator[](0) > camerainfo->operator[](1) || camerainfo->operator[](2) > camerainfo->operator[](3))
+		{
+			errorDiagnosticResults.drift = LEFT;
+		}
+		errorDiagnosticResults.bTrySteer = true;
+
+		// free memory
+		delete camerainfo;
 	}
 
 	// likely an error to do only with speed, could be drag, terrain, friction; would be throttle correct
 	else if (!cameraError && !headingError && rpmError && !locationError)
 	{
 		// TODO check how rpm differs (too fast or slow)
-		float rpmExpected = expectedFuture->GetRMPValues()->operator[](AtTickLocation);
+		float rpmExpected = expectedFuture->GetRMPValues()[AtTickLocation];
 		float rpmCurrent = this->GetVehicleMovement()->GetEngineRotationSpeed();
 		float rpmDiff = rpmExpected - rpmCurrent;
 		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("rpm diff %.1f"), rpmDiff));
+		errorDiagnosticResults.bTryThrottle = true;
 	}
 	// heading wrong way but seeing right things, likely steering error (or friction issue), def steering correct
 	else if (!cameraError && headingError && !rpmError && !locationError)
@@ -965,6 +1027,10 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 		float angDist = rotationInfo->operator[](0);
 		float veering = rotationInfo->operator[](1);
 		float dotprod = rotationInfo->operator[](2);
+		errorDiagnosticResults.bTrySteer = true;
+
+		// free up memory
+		delete rotationInfo;
 	}
 }
 
