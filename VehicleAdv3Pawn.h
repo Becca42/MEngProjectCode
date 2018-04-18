@@ -13,7 +13,7 @@
 /************************************************************************/
 /*							 New Code                                   */
 #define HORIZON 5
-#define NUM_TEST_CARS 2
+#define NUM_TEST_CARS 4
 #define DEFAULT_THROTTLE 0.5F
 #define DEFAULT_STEER 0.F
 

@@ -270,6 +270,7 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 	/*							New Code                                    */
 	// more car forward at a steady rate (for primary and simulation)
 	GetVehicleMovementComponent()->SetThrottleInput(throttleInput + throttleAdjust); 
+	GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("TrhottleAdjust %f"), throttleAdjust)); // TODO throttleAdjust is always 0
 
 	// get current location
 	FTransform currentTransform = this->GetTransform();
@@ -747,17 +748,13 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	float curdrag = moveComp->DragCoefficient;
 	RevertDragError();
 	FTransform currentTransform = this->GetActorTransform();
-	//this->SetActorTransform(dataForSpawn->GetStartPosition()); // commented out for debug -- long term will delete, hacky solution
 	params.Template = this;
 	params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	//FTransform relocateBy = dataForSpawn->GetStartPosition() * currentTransform.Inverse();
 	FTransform relocateBy =  currentTransform.Inverse() * dataForSpawn->GetStartPosition();
 	AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), relocateBy, params); // TODO fails  sometimes (maybe fixed now?)
-	// TODO could flag and try teleport...
 
 	copy->vehicleType = ECarType::ECT_test;
 	this->vehicleType = ECarType::ECT_actual;
-	//this->SetActorTransform(currentTransform); // commented out for debug -- long term will delete, hacky solution
 	// reset primary state after copying <== TODO bother with this here or after spawning all copies? 
 	moveComp->DragCoefficient = curdrag;
 	this->GetMesh()->SetAllBodiesSimulatePhysics(false);
@@ -773,12 +770,14 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	this->StoredCopy = copy;
 
 	// adjust throttle and steering (TODO maybe move this to sep function)
-	if (errorDiagnosticResults.bTrySteer)
+	if (errorDiagnosticResults.bTryThrottle)
 	{
 		// TODO figure out if too fast or too slow or don't know
-		throttleAdjust = FMath::RandRange(-5.f, 5.f);
+		copy->throttleAdjust = FMath::RandRange(-5.f, 5.f);
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("TrhottleAdjust %f"), copy->throttleAdjust));
+
 	}
-	if (errorDiagnosticResults.bTryThrottle)
+	if (errorDiagnosticResults.bTrySteer)
 	{
 		if (errorDiagnosticResults.drift == RIGHT)
 		{
@@ -793,6 +792,8 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 			// don't know which way drifting
 			steerAdjust = FMath::RandRange(-5.f, 5.f);
 		}
+		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("SteerAdjust %f"), steerAdjust));
+
 	}
 	// store what change we're trying and in resume, what it's corresponding result is
 	//currentRun = UTestRunData::MAKE(steerAdjust, throttleAdjust); // commented out for debug
