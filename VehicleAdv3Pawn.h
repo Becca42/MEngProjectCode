@@ -31,6 +31,15 @@ struct SDiagnostics
 	bool bTryThrottle;
 	bool bTrySteer;
 	int drift;
+
+	/** reset fields of SDiagnostics object
+	* @param SDiagnostics struct to be reset <-- TODO pass by pointer or reference or value? */
+	void Reset() 
+	{
+		bTryThrottle = false;
+		bTrySteer = false;
+		drift = 0;
+	};
 };
 /************************************************************************/
 
@@ -267,6 +276,13 @@ public:
 
 	/**TODO*/
 	TArray<int>* CameraErrorInfo(int index);
+
+	/** determines which side of a line (def by two points) another point lies
+	  * @param a endpoint of line
+	  * @param b endpoint of line
+	  * @param m point lying to left, right, (or on) line def by a and b
+	  * @return -1 if m is to the left, 0 in on the line, 1 if on the right*/
+	int GetSideOfLine(FVector a, FVector b, FVector m);
 
 	/** TODO: Called when a variable in the current state does not match what is expected in simulation
 	 * @param index - tick where error was found 

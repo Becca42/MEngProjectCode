@@ -270,7 +270,6 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 	/*							New Code                                    */
 	// more car forward at a steady rate (for primary and simulation)
 	GetVehicleMovementComponent()->SetThrottleInput(throttleInput + throttleAdjust); 
-	GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("TrhottleAdjust %f"), throttleAdjust)); // TODO throttleAdjust is always 0
 
 	// get current location
 	FTransform currentTransform = this->GetTransform();
@@ -773,7 +772,7 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	if (errorDiagnosticResults.bTryThrottle)
 	{
 		// TODO figure out if too fast or too slow or don't know
-		copy->throttleAdjust = FMath::RandRange(-5.f, 5.f);
+		copy->throttleAdjust = FMath::RandRange(-3.f, 3.f);
 		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("TrhottleAdjust %f"), copy->throttleAdjust));
 
 	}
@@ -781,16 +780,16 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	{
 		if (errorDiagnosticResults.drift == RIGHT)
 		{
-			steerAdjust = FMath::RandRange(-5.f, 0.f);
+			copy->steerAdjust = FMath::RandRange(-5.f, 0.f);
 		}
 		else if (errorDiagnosticResults.drift == LEFT)
 		{
-			steerAdjust = FMath::RandRange(0.f, 5.f);
+			copy->steerAdjust = FMath::RandRange(0.f, 5.f);
 		}
 		else
 		{
 			// don't know which way drifting
-			steerAdjust = FMath::RandRange(-5.f, 5.f);
+			copy->steerAdjust = FMath::RandRange(-5.f, 5.f);
 		}
 		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("SteerAdjust %f"), steerAdjust));
 
@@ -942,13 +941,20 @@ TArray<int>* AVehicleAdv3Pawn::CameraErrorInfo(int index)
 	return results;
 }
 
+int AVehicleAdv3Pawn::GetSideOfLine(FVector a, FVector b, FVector m)
+{
+	return FMath::Sign((b.X - a.X) * (m.Y - a.Y) - (b.Y - a.Y) * (m.X - a.X));
+}
+
 void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingError, bool rpmError, bool locationError)
 {
 	/* TODO decide if likely throttle fixable or steering fixable
 	 * maybe make a guess if self or environment?
 	 * we have (1) landmarks (2) rpm (3) heading (4) rough positioning with "gps"
 	 *
-	 * TODO save the conclusions to use LATER in generate test in errorDiagnosticResults*/
+	 * save the conclusions to use LATER in generate test in errorDiagnosticResults */
+
+	// make sure only doing this for actual car and that an error was detected
 	if (this->vehicleType != ECarType::ECT_actual || bRunDiagnosticTests)
 	{
 		return;
@@ -956,7 +962,17 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 	bRunDiagnosticTests = true;
 	runCount = NUM_TEST_CARS;
 
-	// going wrong way, seeing wrong things, at either wrong speed or spinning to hard
+	// clear errorDiagnosticResults to make sure it doesn't carry over information
+	errorDiagnosticResults.Reset();
+
+	if (!cameraError && !headingError && !rpmError && locationError)
+	{
+		// TODO location error only, could be steering or throttle fixable
+		errorDiagnosticResults.bTryThrottle = true;
+		errorDiagnosticResults.bTrySteer = true;
+	}
+
+	// going wrong way, seeing wrong things, at either wrong speed or spinning too hard
 	if (cameraError && headingError && rpmError && !locationError)
 	{
 		// check how heading differs
@@ -1010,7 +1026,7 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 		delete camerainfo;
 	}
 
-	// likely an error to do only with speed, could be drag, terrain, friction; would be throttle correct
+	// likely an error to do only with speed, could be drag, terrain, friction; would be throttle correct <-- does trying to correct make sense? no other errors noted...
 	else if (!cameraError && !headingError && rpmError && !locationError)
 	{
 		// TODO check how rpm differs (too fast or slow)
@@ -1019,6 +1035,8 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 		float rpmDiff = rpmExpected - rpmCurrent;
 		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("rpm diff %.1f"), rpmDiff));
 		errorDiagnosticResults.bTryThrottle = true;
+		errorDiagnosticResults.drift = GetSideOfLine(dataForSpawn->GetStartPosition().GetLocation(), expectedFuture->GetPath()[AtTickLocation].GetLocation(), this->GetActorLocation());
+		
 	}
 	// heading wrong way but seeing right things, likely steering error (or friction issue), def steering correct
 	else if (!cameraError && headingError && !rpmError && !locationError)
