@@ -778,11 +778,11 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	}
 	if (errorDiagnosticResults.bTrySteer)
 	{
-		if (errorDiagnosticResults.drift == RIGHT)
+		if (errorDiagnosticResults.nDrift == RIGHT)
 		{
 			copy->steerAdjust = FMath::RandRange(-5.f, 0.f);
 		}
-		else if (errorDiagnosticResults.drift == LEFT)
+		else if (errorDiagnosticResults.nDrift == LEFT)
 		{
 			copy->steerAdjust = FMath::RandRange(0.f, 5.f);
 		}
@@ -946,6 +946,37 @@ int AVehicleAdv3Pawn::GetSideOfLine(FVector a, FVector b, FVector m)
 	return FMath::Sign((b.X - a.X) * (m.Y - a.Y) - (b.Y - a.Y) * (m.X - a.X));
 }
 
+int AVehicleAdv3Pawn::GetFastOrSlow(FVector start, FVector goal, FVector expected, FVector m)
+{
+	float dstartM = FVector::DistSquaredXY(start, m);
+	float dstartE = FVector::DistSquaredXY(start, expected);
+	float dgoalM = FVector::DistSquaredXY(goal, m);
+	float dgoalE = FVector::DistSquaredXY(goal, expected);
+	float dstartGoal = FVector::DistSquaredXY(start, goal);
+
+	// if start is closer to goal than m then could be reversed
+	if (dstartGoal < FVector::DistSquaredXY(m, goal))
+	{
+		return -2;
+	}
+	// if goal is closer to start than m probably too fast
+	if (dstartGoal < FVector::DistSquaredXY(m, start))
+	{
+		return 1;
+	}
+	// if m is closer to start than expected then too slow
+	if (dstartM < dstartE)
+	{
+		return -1;
+	}
+	// if m is closer to goal than expected then too fast
+	if (dgoalM < dgoalE)
+	{
+		return 1;
+	}
+	return 0;
+}
+
 void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingError, bool rpmError, bool locationError)
 {
 	/* TODO decide if likely throttle fixable or steering fixable
@@ -965,91 +996,54 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 	// clear errorDiagnosticResults to make sure it doesn't carry over information
 	errorDiagnosticResults.Reset();
 
-	if (!cameraError && !headingError && !rpmError && locationError)
+	if (cameraError)
 	{
-		// TODO location error only, could be steering or throttle fixable
-		errorDiagnosticResults.bTryThrottle = true;
-		errorDiagnosticResults.bTrySteer = true;
-	}
-
-	// going wrong way, seeing wrong things, at either wrong speed or spinning too hard
-	if (cameraError && headingError && rpmError && !locationError)
-	{
-		// check how heading differs
-		TArray<float>* rotationInfo = RotationErrorInfo(index);
-		float angDist = rotationInfo->operator[](0);
-		float veering = rotationInfo->operator[](1);
-		float dotprod = rotationInfo->operator[](2);
-
-		// check how rpm differs (too fast or slow)
-		float rpmExpected = expectedFuture->GetRMPValues()[AtTickLocation];
-		float rpmCurrent = this->GetVehicleMovement()->GetEngineRotationSpeed();
-		float rpmDiff = rpmExpected - rpmCurrent;
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Veering %b"), veering));
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("Dot Product steering diff %.1f"), dotprod));
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("rpm diff %.1f"), rpmDiff));
-
 		// check seen object differences
 		TArray<int>* camerainfo = CameraErrorInfo(index);
 		// TODO do something with this information about 
 
 		if (camerainfo->operator[](0) < camerainfo->operator[](1) || camerainfo->operator[](2) < camerainfo->operator[](3))
 		{
-			errorDiagnosticResults.drift = RIGHT;
+			errorDiagnosticResults.nDrift = RIGHT;
 		}
 		if (camerainfo->operator[](0) > camerainfo->operator[](1) || camerainfo->operator[](2) > camerainfo->operator[](3))
 		{
-			errorDiagnosticResults.drift = LEFT;
+			errorDiagnosticResults.nDrift = LEFT;
 		}
 		errorDiagnosticResults.bTryThrottle = true;
 		errorDiagnosticResults.bTrySteer = true;
 
 		// make sure memory is freed
-		delete rotationInfo;
 		delete camerainfo;
 	}
-	// see wrong things but heading right way and in (very roughly) right place; probably drag or environment (slope or friction) issue, so throttle issue
-	else if (cameraError && !headingError && !rpmError && !locationError)
+	if (headingError)
 	{
-		TArray<int>* camerainfo = CameraErrorInfo(index);
-		if (camerainfo->operator[](0) < camerainfo->operator[](1) || camerainfo->operator[](2) < camerainfo->operator[](3))
-		{
-			errorDiagnosticResults.drift = RIGHT;
-		}
-		if (camerainfo->operator[](0) > camerainfo->operator[](1) || camerainfo->operator[](2) > camerainfo->operator[](3))
-		{
-			errorDiagnosticResults.drift = LEFT;
-		}
+		// TODO do more with angle difference etc.
 		errorDiagnosticResults.bTrySteer = true;
 
-		// free memory
-		delete camerainfo;
-	}
-
-	// likely an error to do only with speed, could be drag, terrain, friction; would be throttle correct <-- does trying to correct make sense? no other errors noted...
-	else if (!cameraError && !headingError && rpmError && !locationError)
-	{
-		// TODO check how rpm differs (too fast or slow)
-		float rpmExpected = expectedFuture->GetRMPValues()[AtTickLocation];
-		float rpmCurrent = this->GetVehicleMovement()->GetEngineRotationSpeed();
-		float rpmDiff = rpmExpected - rpmCurrent;
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("rpm diff %.1f"), rpmDiff));
-		errorDiagnosticResults.bTryThrottle = true;
-		errorDiagnosticResults.drift = GetSideOfLine(dataForSpawn->GetStartPosition().GetLocation(), expectedFuture->GetPath()[AtTickLocation].GetLocation(), this->GetActorLocation());
-		
-	}
-	// heading wrong way but seeing right things, likely steering error (or friction issue), def steering correct
-	else if (!cameraError && headingError && !rpmError && !locationError)
-	{
 		// check how heading differs
-		TArray<float>* rotationInfo = RotationErrorInfo(index);
+		/*TArray<float>* rotationInfo = RotationErrorInfo(index);
 		float angDist = rotationInfo->operator[](0);
 		float veering = rotationInfo->operator[](1);
 		float dotprod = rotationInfo->operator[](2);
-		errorDiagnosticResults.bTrySteer = true;
-
 		// free up memory
-		delete rotationInfo;
+		delete rotationInfo;*/
+	}
+	if (locationError)
+	{
+		errorDiagnosticResults.bTryThrottle = true;
+		errorDiagnosticResults.bTrySteer = true;
+		// check if left/right drift
+		// TODO what to do if drift already defined and disagree...
+		errorDiagnosticResults.nDrift = GetSideOfLine(dataForSpawn->GetStartPosition().GetLocation(), expectedFuture->GetPath()[AtTickLocation].GetLocation(), this->GetActorLocation());
+		// check too fast/slow
+		errorDiagnosticResults.nSpeedDiff = GetFastOrSlow(dataForSpawn->GetStartPosition().GetLocation(), expectedFuture->GetTransform().GetLocation(), expectedFuture->GetPath()[AtTickLocation].GetLocation(), this->GetActorLocation());
+	}
+	if (rpmError)
+	{
+		errorDiagnosticResults.bTryThrottle = true;
+		errorDiagnosticResults.nSpeedDiff = GetFastOrSlow(dataForSpawn->GetStartPosition().GetLocation(), expectedFuture->GetTransform().GetLocation(), expectedFuture->GetPath()[AtTickLocation].GetLocation(), this->GetActorLocation());
+		errorDiagnosticResults.nDrift = GetSideOfLine(dataForSpawn->GetStartPosition().GetLocation(), expectedFuture->GetPath()[AtTickLocation].GetLocation(), this->GetActorLocation());
 	}
 }
 

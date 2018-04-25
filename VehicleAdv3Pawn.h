@@ -30,7 +30,8 @@ struct SDiagnostics
 {
 	bool bTryThrottle;
 	bool bTrySteer;
-	int drift;
+	int nDrift;
+	int nSpeedDiff;
 
 	/** reset fields of SDiagnostics object
 	* @param SDiagnostics struct to be reset <-- TODO pass by pointer or reference or value? */
@@ -38,7 +39,8 @@ struct SDiagnostics
 	{
 		bTryThrottle = false;
 		bTrySteer = false;
-		drift = 0;
+		nDrift = 0;
+		nSpeedDiff = 0;
 	};
 };
 /************************************************************************/
@@ -283,6 +285,11 @@ public:
 	  * @param m point lying to left, right, (or on) line def by a and b
 	  * @return -1 if m is to the left, 0 in on the line, 1 if on the right*/
 	int GetSideOfLine(FVector a, FVector b, FVector m);
+
+	/** best guess if car is too fast or slow
+	  * TODO use rpm in addition to location?
+	  * @return -2 if reversed, -1 if too slow, 0 if correct speed or inconclusive, 1 if too fast */
+	int GetFastOrSlow(FVector start, FVector goal, FVector expected, FVector m);
 
 	/** TODO: Called when a variable in the current state does not match what is expected in simulation
 	 * @param index - tick where error was found 
