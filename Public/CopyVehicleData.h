@@ -7,7 +7,7 @@
 #include "CopyVehicleData.generated.h"
 
 /**
- * 
+ * TODO wtf is the point of this class?
  */
 UCLASS()
 class VEHICLEADV3_API UCopyVehicleData : public UObject

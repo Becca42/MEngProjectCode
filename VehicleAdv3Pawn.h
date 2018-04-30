@@ -43,6 +43,14 @@ struct SDiagnostics
 		nSpeedDiff = 0;
 	};
 };
+
+struct SCostComponents
+{
+	FVector location;
+	FQuat rotation;
+	float rpm;
+};
+
 /************************************************************************/
 
 class UPhysicalMaterial;
@@ -217,7 +225,7 @@ public:
 	/* keep track of error testing results */
 	UPROPERTY(EditAnywhere)
 	UTestRunData* currentRun;
-	float closestRun;
+	float lowestCost;
 	UPROPERTY(EditAnywhere)
 	UTestRunData* bestRun;
 	int runCount;
@@ -273,7 +281,7 @@ public:
 
 	/** get info about severity of rotation error
 	 * @param index in simulated data where error found
-	 * @return TArray of floats representing (respectively) angular distance (in radians), veering (LEFT/RIGHT), dot product */
+	 * @return TArray of floats representing (respectively) angular distance (in radians), veering (LEFT/RIGHT), dot product or nullptr if expectedfuture is null */
 	TArray<float>* RotationErrorInfo(int index); // <== currently doesn't get called; either delete or call in ErrorTriage
 
 	/**TODO*/
@@ -296,6 +304,13 @@ public:
 	 TODO make sure this is called async?? */
 	void ErrorTriage(int index, bool cameraError, bool headingError, bool rpmError, bool locationError);
 
+	/** @return cost of x for target t: l = (t - x)^2 */
+	float QuadraticLoss(SCostComponents x, SCostComponents t);
+
+	/** regularization term to preference smallest difference in inputs
+	  * @return regularization term for cost calculation  */
+	float Regularize(float deltaThrottle, float deltaSteer);
+	
 	/** Induce error (callback for 'I' keypress) by increasing drag 10x */
 	void InduceDragError();
 

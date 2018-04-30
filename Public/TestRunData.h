@@ -7,7 +7,7 @@
 #include "TestRunData.generated.h"
 
 /**
- * 
+ * TODO wtf is the point of this class?
  */
 UCLASS()
 class VEHICLEADV3_API UTestRunData : public UObject
