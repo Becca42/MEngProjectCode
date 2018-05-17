@@ -20,6 +20,7 @@
 UENUM(Meta = (Bitflags))
 enum class ECarType
 {
+	ECT_target,
 	ECT_prediction,
 	ECT_actual,
 	ECT_test
@@ -102,6 +103,12 @@ class AVehicleAdv3Pawn : public AWheeledVehicle
 	FVector ResetVelocityLinear;
 	FVector ResetVelocityAngular;
 	float ResetRPM;
+
+	/** flag to signal for clean run to gather target data */
+	bool bStartup = true;
+
+	/** store data from target run to calculate cost for this 'experiment' */
+	USimulationData* targetRunData;
 
 	/** information about expected path up to some horizon */
 	UPROPERTY(EditAnywhere)
@@ -257,6 +264,8 @@ public:
 	/** flag for applying low friction conditions */
 	bool bLowFrictionOn = false;
 
+	void GenerateTargetRun();
+
 	//NTODO:spooky ptrs?
 	/** checks if seenLandmark is in expectedLandmarks
 	@param expectedLandmark array of names of landmarks expected to see in this iteration
@@ -307,6 +316,10 @@ public:
 	/** @return cost of x for target t: l = (t - x)^2 */
 	float QuadraticLoss(SCostComponents x, SCostComponents t);
 
+	/** Use info from entire run and target run to calculate cost
+	  * TODO may store along way and then use changes made (e.g. additional regularization for minimal input change)*/
+	void CalculateTotalRunCost();
+
 	/** regularization term to preference smallest difference in inputs
 	  * @return regularization term for cost calculation  */
 	float Regularize(float deltaThrottle, float deltaSteer);
@@ -325,6 +338,11 @@ public:
 
 	/** TODO: Change coefficient of friction (on ground, not wheel) */
 	void InduceFrictionError();
+
+
+	/** overlap function for reaching goal */
+	UFUNCTION()
+		void BeginOverlap(class AActor* ThisActor, class AActor* OtherActor);
 
 	/************************************************************************/
 
