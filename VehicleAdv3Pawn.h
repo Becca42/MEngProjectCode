@@ -114,9 +114,6 @@ class AVehicleAdv3Pawn : public AWheeledVehicle
 	UPROPERTY(EditAnywhere)
 	USimulationData* expectedFuture;
 
-	/** Handler for pause timer (horizon) */
-	FTimerHandle PauseVehicleTimerHandle;
-
 	/** effectively horizon for simulations triggered by "P" key-press */
 	int pauseTimer = 10; // TODO eventually remove and just use 'horizon'
 
@@ -281,6 +278,9 @@ public:
 
 	/** Resumes primary vehicles, saves information about expected path and destroys temp vehicle */
 	void ResumeExpectedSimulation();
+
+	/** TODO */
+	void ResumeTargetRun();
 
 	/** TODO */
 	void GenerateDiagnosticRuns();

@@ -26,6 +26,9 @@ class USimulationData : public UObject {
 	/** landmarks we should be seeing at each tick (keyed by tick) */
 	TMap<int32, TArray<ALandmark*>> landmarks;
 
+	/** runtime start to finish */
+	float runtime;
+
 public:
 
 	/** object fields have been set and can be accessed appropriately */
@@ -40,6 +43,12 @@ public:
 
 	/* initialize empty object */
 	void Initialize(FTransform tran, int g, TArray<FTransform> path, TArray<FVector> velocities, TArray<float> rpms, TMap<int32, TArray<ALandmark*>> landmarks);
+
+
+	/** initialize specifically for target run data (doesn't care about field like gear etc.)
+	  * TODO think about if want to store landmarks for target run */
+	void InitializeTarget(FTransform tran, TArray<FTransform> path, TArray<FVector> velocities, TArray<float> rpms, float runtime);
+
 
 	/** Stores final transform */
 	FTransform GetTransform();
@@ -62,4 +71,7 @@ public:
 
 	bool hasLandmarksAtTick(int32 tick);
 
+	float GetRunTime();
+
+	void SetRunTime(float time);
 };

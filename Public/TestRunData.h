@@ -7,7 +7,8 @@
 #include "TestRunData.generated.h"
 
 /**
- * TODO wtf is the point of this class?
+ * TODO better describe class
+ * store data from test run used to calculate cost and make adjustment
  */
 UCLASS()
 class VEHICLEADV3_API UTestRunData : public UObject
@@ -16,14 +17,21 @@ class VEHICLEADV3_API UTestRunData : public UObject
 
 	float steeringChange;
 	float throttleChange;
-	FVector endPoint;
+	FTransform finalTransform;
+	float finalRPM;
 
 public:
+	bool hitgoal;
+
 	UTestRunData();
 	static UTestRunData* MAKE(float steering, float throttle);
 	static UTestRunData* MAKE(float steering, float throttle, FVector & end);
 
 	~UTestRunData();
+
+	void Initialize(float steering, float throttle);
+
+	void Initialize(float steering, float throttle, FTransform & finalTransform, float finialRPM);
 
 	/** @returns steering change */
 	float GetSteeringChange();
@@ -31,9 +39,10 @@ public:
 	/** @returns throttle change */
 	float GetThrottleChange();
 
-	/** @returns endpoint */
-	FVector GetEndPoint();
+	/** @returns final transform */
+	FTransform GetFinalTransform();
 
-	/** @param FVector to set endpoint to */
-	void SetEndPoint(FVector & endpoint);
+	/** @returns final rpm */
+	float GetFinalRPM();
+
 };

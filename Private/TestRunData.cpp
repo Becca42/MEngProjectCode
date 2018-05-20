@@ -6,7 +6,6 @@ UTestRunData::UTestRunData()
 {
 	this->steeringChange = 0.f;
 	this->throttleChange = 0.f;
-	this->endPoint = FVector::ZeroVector;
 }
 
 UTestRunData* UTestRunData::MAKE(float steering, float throttle)
@@ -14,7 +13,6 @@ UTestRunData* UTestRunData::MAKE(float steering, float throttle)
 	UTestRunData* datum = NewObject<UTestRunData>();
 	datum->steeringChange = steering;
 	datum->throttleChange = throttle;
-	datum->endPoint = FVector::ZeroVector;
 	return datum;
 }
 
@@ -24,12 +22,26 @@ UTestRunData* UTestRunData::MAKE(float steering, float throttle, FVector & end)
 	//UTestRunData* datum = NewObject<UTestRunData>();
 	newtrdata->steeringChange = steering;
 	newtrdata->throttleChange = throttle;
-	newtrdata->endPoint = end;
 	return newtrdata.Get();
 }
 
 UTestRunData::~UTestRunData()
 {
+}
+
+void UTestRunData::Initialize(float steering, float throttle)
+{
+	steeringChange = steering;
+	throttleChange = throttle;
+
+}
+
+void UTestRunData::Initialize(float steering, float throttle, FTransform & finalTransform, float finialRPM)
+{
+	steeringChange = steering;
+	throttleChange = throttle;
+	finalTransform = finalTransform;
+	finalRPM = finalRPM;
 }
 
 float UTestRunData::GetSteeringChange()
@@ -42,12 +54,12 @@ float UTestRunData::GetThrottleChange()
 	return throttleChange;
 }
 
-FVector UTestRunData::GetEndPoint()
+FTransform UTestRunData::GetFinalTransform()
 {
-	return endPoint;
+	return finalTransform;
 }
 
-void UTestRunData::SetEndPoint(FVector & endpoint)
+float UTestRunData::GetFinalRPM()
 {
-	this->endPoint = endpoint;
+	return finalRPM;
 }

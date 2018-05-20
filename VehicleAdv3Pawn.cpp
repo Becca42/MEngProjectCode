@@ -498,10 +498,9 @@ void AVehicleAdv3Pawn::BeginPlay()
 	GetWorldTimerManager().SetTimer(HorizonTimerHandle, this, &AVehicleAdv3Pawn::HorizonTimer, 1.0f, true, 0.f);
 
 	// timer for model generation, generates a new model up to HORIZON every HORIZON seconds -- TODO maybe do at different intervals
-	if (vehicleType == ECarType::ECT_actual)  // TODO maybe move  this somewhere else because first run will be target; so do this setup when "resuming" from target
+	if (vehicleType == ECarType::ECT_actual)
 	{
 		GetWorldTimerManager().SetTimer(GenerateExpectedTimerHandle, this, &AVehicleAdv3Pawn::RunTestOrExpect, float(HORIZON) * 2.f, true, 0.f);
-		
 	}
 	/************************************************************************/
 }
@@ -550,13 +549,14 @@ bool AVehicleAdv3Pawn::CheckLandmarkHit(TArray<ALandmark*>* expectedLandmarks, A
 
 void AVehicleAdv3Pawn::RunTestOrExpect()
 {
+	int debug = 0;
 	// see if target run needs to be generated *first*
 	if (!targetRunData)
 	{
-		// TODO generate target run
 		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("Generating Target Run."));
 		UE_LOG(VehicleRunState, Log, TEXT("Generating Target Run."));
-		vehicleType == ECarType::ECT_target;
+		// TODO generate target run by spawning target vehicle
+		GenerateExpected();
 	}
 	else if (bRunDiagnosticTests)
 	{
@@ -619,12 +619,27 @@ void AVehicleAdv3Pawn::GenerateExpected()
 	RevertDragError();
 	params.Template = this;
 	AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), params);
-	copy->vehicleType = ECarType::ECT_prediction;
+	if (!targetRunData)
+	{
+		copy->vehicleType = ECarType::ECT_target;
+		copy->StoredCopy = this;
+		// don't want target run to time-out, only stop when goal is reached
+		GetWorldTimerManager().PauseTimer(GenerateExpectedTimerHandle);
+		GetWorldTimerManager().PauseTimer(HorizonTimerHandle);
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("DEBUG Expected"));
+	}
+	else
+	{
+		copy->vehicleType = ECarType::ECT_prediction;
+	}
 	// reset primary state after copying
 	this->vehicleType = ECarType::ECT_actual;
 	moveComp->DragCoefficient = curdrag;
 	moveComp->SetEngineRotationSpeed(currRPM);
-	this->StoredCopy = copy;
+	if (targetRunData)
+	{
+		this->StoredCopy = copy;
+	}
 
 	// get all ramps
 	TArray<AActor*> FoundActors;
@@ -691,10 +706,11 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 	}
 
 	// save results for model checking
-	UWheeledVehicleMovementComponent* movecomp = this->StoredCopy->GetVehicleMovement();
-	if (vehicleType == = ECarType::ECT_prediction)
+	//UWheeledVehicleMovementComponent* movecomp = this->StoredCopy->GetVehicleMovement(); // TODO stored copy is null B/C this isn't the og car!! its the copy!!
+	if (this->StoredCopy->vehicleType == ECarType::ECT_prediction)
 	{
-
+		// save results for model checking
+		UWheeledVehicleMovementComponent* movecomp = this->StoredCopy->GetVehicleMovement(); // TODO stored copy is null B/C this isn't the og car!! its the copy!!
 		this->expectedFuture = USimulationData::MAKE(this->StoredCopy->GetTransform(), movecomp->GetCurrentGear(), this->StoredCopy->PathLocations, this->StoredCopy->VelocityAlongPath, this->StoredCopy->RPMAlongPath, this->StoredCopy->LandmarksAlongPath);
 		//this->expectedFuture = NewObject<USimulationData>();
 		// TODO use Initailize() or MAKE()???
@@ -702,10 +718,7 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 
 		bModelready = true;
 	}
-	if (vehicleType == ECarType::ECT_target)
-	{
-		this->targetRunData = this->StoredCopy->targetRunData;
-	}
+	
 	// clear timer
 	bGenExpected = false;
 	horizonCountdown = false;
@@ -724,6 +737,7 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 		controller->Possess(this);
 		// restart original pawn
 	}
+	
 	this->GetMesh()->SetAllBodiesSimulatePhysics(true);
 	this->GetMesh()->SetPhysicsLinearVelocity(this->ResetVelocityLinear);
 	this->GetMesh()->SetAllPhysicsAngularVelocity(ResetVelocityAngular);
@@ -731,22 +745,18 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 	// destroy temp vehicle
 	this->StoredCopy->Destroy(); // TODO look into this more, do I want to destroy this?
 
-	if (vehicleType == ECarType::ECT_prediction)
-	{
+	// spawn sphere to show predicted final destination
+	DrawDebugSphere(
+		GetWorld(),
+		this->expectedFuture->GetTransform().GetLocation(), // TODO expectedFuture is null!!
+		40.f,
+		32,
+		FColor(255, 0, 0),
+		false,
+		(HORIZON * 3.f)
+	);
 
-		// spawn sphere to show predicted final destination
-		DrawDebugSphere(
-			GetWorld(),
-			this->expectedFuture->GetTransform().GetLocation(),
-			40.f,
-			32,
-			FColor(255, 0, 0),
-			false,
-			(HORIZON * 3.f)
-		);
-
-		UE_LOG(VehicleRunState, Log, TEXT("Expected final location: %s"), *this->expectedFuture->GetTransform().GetLocation().ToString());
-	}
+	UE_LOG(VehicleRunState, Log, TEXT("Expected final location: %s"), *this->expectedFuture->GetTransform().GetLocation().ToString());
 	// induce drag error
 	/*if (this->GetVehicleMovementComponent()->DragCoefficient < 3000.f)
 	{
@@ -763,6 +773,82 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 
 	bLocationErrorFound = false;
 	bRotationErrorFound = false;
+}
+
+void AVehicleAdv3Pawn::ResumeTargetRun()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("RESUME FROM TARGET RUN"));
+	UE_LOG(VehicleRunState, Log, TEXT("Resuming from target run."));
+
+	AVehicleAdv3Pawn* realcar = this->StoredCopy;
+
+	// get all ramps
+	TArray<AActor*> FoundActors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ACustomRamp::StaticClass(), FoundActors);
+	// change collision properties of ramps (no collide with simulated vehicle)
+	for (AActor* ramp : FoundActors)
+	{
+		if (UStaticMeshComponent* mesh = Cast<UStaticMeshComponent>(ramp->GetRootComponent()))
+		{
+			mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			// apply low physics if error is induced & not copy
+			//if (bLowFrictionOn)
+			//{
+			//	// TODO apply slippery mat to ramp pieces
+			//	mesh->SetPhysMaterialOverride(CustomSlipperyMaterial);
+			//}
+		}
+		//ramp->GetRootComponent()->SetSimulatePhysics(false); // doesn't even simulate physics >.<
+	}
+
+	// clear timer
+	bGenExpected = false;
+	horizonCountdown = false;
+	horizon = HORIZON;
+
+	realcar->targetRunData = this->targetRunData;
+
+	// resume primary vehicle
+	realcar->SetActorTickEnabled(true);
+
+	// reset player controller back to primary
+	AController* controller = this->StoredController;
+	// 	Unposses your current pawn(Controller->UnPossess())
+	if (controller)
+	{
+		controller->UnPossess();
+		// 	Re-posses main pawn
+		controller->Possess(realcar);
+		// restart original pawn
+	}	
+
+	realcar->GetMesh()->SetAllBodiesSimulatePhysics(true);
+	realcar->GetMesh()->SetPhysicsLinearVelocity(this->ResetVelocityLinear);
+	realcar->GetMesh()->SetAllPhysicsAngularVelocity(ResetVelocityAngular);
+	realcar->GetVehicleMovement()->SetEngineRotationSpeed(this->ResetRPM);
+	// destroy temp vehicle
+	this->Destroy();
+
+	// induce drag error
+	/*if (this->GetVehicleMovementComponent()->DragCoefficient < 3000.f)
+	{
+	InduceDragError();
+	}*/
+
+	// change friction
+	//InduceFrictionError();
+
+	// reset for error detection
+	AtTickLocation = 0;
+
+	//InduceSteeringError();
+
+	bLocationErrorFound = false;
+	bRotationErrorFound = false;
+
+	realcar->GetWorldTimerManager().UnPauseTimer(realcar->GenerateExpectedTimerHandle);
+	realcar->GetWorldTimerManager().UnPauseTimer(realcar->HorizonTimerHandle);
+	//realcar->GetWorldTimerManager().SetTimer(GenerateExpectedTimerHandle, this, &AVehicleAdv3Pawn::RunTestOrExpect, float(HORIZON) * 2.f, true, 0.f);
 }
 
 
@@ -899,7 +985,12 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 	x.rpm = StoredCopy->GetVehicleMovementComponent()->GetEngineRotationSpeed();
 	float loss = QuadraticLoss(x, t);
 	float reg = Regularize(currentRun->GetThrottleChange(), currentRun->GetSteeringChange());
-	float cost = loss + reg;
+	float goalBonus = 0.f;
+	if (currentRun->hitgoal)
+	{
+		goalBonus = 10.f;
+	}
+	float cost = loss + reg - goalBonus;
 	UE_LOG(ErrorCorrection, Log, TEXT("Cost for run %i %f"), NUM_TEST_CARS - runCount, cost);
 
 	
@@ -922,7 +1013,6 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 	this->StoredCopy->Destroy();
 	//this->dataForSpawn->BeginDestroy();
 	GetWorldTimerManager().UnPauseTimer(GenerateExpectedTimerHandle);
-
 }
 
 TArray<float>* AVehicleAdv3Pawn::RotationErrorInfo(int index)
@@ -1132,10 +1222,18 @@ float AVehicleAdv3Pawn::QuadraticLoss(SCostComponents x, SCostComponents t)
 void AVehicleAdv3Pawn::CalculateTotalRunCost()
 {
 	// TODO calculate total run cost
+	float total = 0;
+	// diff in location
+	total += FMath::Pow(FVector::DistSquaredXY(t.location, x.location), 2);
+	// diff in rotation
+	total += FMath::Pow(t.rotation.AngularDistance(x.rotation), 2);
+	// diff in rpm
+	total += FMath::Pow(t.rpm - x.rpm, 2);
 
-	// TODO log cost
-
-	// TODO stop program running
+	// log cost
+	UE_LOG(VehicleRunState, Log, TEXT("Total run cost: %f"), total);
+	// stop car
+	throttleInput = 0.f;
 }
 
 float AVehicleAdv3Pawn::Regularize(float deltaThrottle, float deltaSteer)
@@ -1186,18 +1284,26 @@ void AVehicleAdv3Pawn::BeginOverlap(class AActor* ThisActor, class AActor* Other
 		{
 			// store info from target run
 			targetRunData = NewObject<USimulationData>();
-			targetRunData->InitializeTarget(this->GetTransform(), PathLocations, VelocityAlongPath, RPMAlongPath);
+			targetRunData->InitializeTarget(this->GetTransform(), PathLocations, VelocityAlongPath, RPMAlongPath, this->GetGameTimeSinceCreation());
 			UE_LOG(VehicleRunState, Log, TEXT("Target Run Completed")); // TODO add log class for target etc.
 
 			// TODO stop and start real run (transfer controller, etc.) <-- can use ResumeExpected, just don't store expected future
-			ResumeExpectedSimulation();
+			ResumeTargetRun();
 		}
 		if (vehicleType == ECarType::ECT_actual)
 		{
+			// stop generate predictions etc.
+			GetWorldTimerManager().PauseTimer(GenerateExpectedTimerHandle);
+			GetWorldTimerManager().PauseTimer(HorizonTimerHandle);
 			// do cost calcuation
-			CalculateTotalRunCost;
+			CalculateTotalRunCost();
 		}
-		// if predictive or hypothesized car, ignore(?)
+		if (vehicleType == ECarType::ECT_test)
+		{
+			currentRun->hitgoal = true;
+			// TODO figure out if can set timer to 0 and end this test run
+			horizon = 0;
+		}
 	}
 }
 
@@ -1206,7 +1312,7 @@ void AVehicleAdv3Pawn::HorizonTimer()
 	if (horizonCountdown)
 	{
 		--horizon;
-		if (horizon < 1 && vehicleType != ECarType::ECT_target) // won't resume from target until goal is reached
+		if (horizon < 1 && vehicleType != ECarType::ECT_target) // won't resume from target run until goal is reached
 		{
 			bGenExpected ? ResumeExpectedSimulation() : ResumeFromDiagnostic();
 		}

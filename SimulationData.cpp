@@ -42,6 +42,16 @@ void USimulationData::Initialize(FTransform tran, int g, TArray<FTransform> path
 
 }
 
+void USimulationData::InitializeTarget(FTransform tran, TArray<FTransform> path, TArray<FVector> velocities, TArray<float> rpms, float runtime)
+{
+	this->transform = tran;
+	this->path = path;
+	this->velocities = velocities;
+	this->rpms = rpms;
+	this->bIsReady = true;
+	this->runtime = runtime;
+}
+
 FTransform USimulationData::GetTransform()
 {
 	return this->transform;
@@ -77,4 +87,14 @@ bool USimulationData::hasLandmarksAtTick(int32 tick)
 	this->landmarks.GetKeys(*keys);
 	return keys->Contains(tick);
 	//NTODO: mem dealloc
+}
+
+float USimulationData::GetRunTime()
+{
+	return runtime;
+}
+
+void USimulationData::SetRunTime(float time)
+{
+	runtime = time;
 }
