@@ -133,6 +133,9 @@ class AVehicleAdv3Pawn : public AWheeledVehicle
 	/** Handler for model/expected trajectory generation timer */
 	FTimerHandle CompareLocationTimerHandle;
 
+	/** Handle for timing full run */
+	FTimerHandle RunTimerHandle;
+
 	/** Tick fire for expected path simulation */
 	void HorizonTimer();
 	/************************************************************************/
@@ -314,7 +317,13 @@ public:
 	void ErrorTriage(int index, bool cameraError, bool headingError, bool rpmError, bool locationError);
 
 	/** @return cost of x for target t: l = (t - x)^2 */
-	float QuadraticLoss(SCostComponents x, SCostComponents t);
+	float QuadraticLoss(SCostComponents expected, SCostComponents test, SCostComponents actual);
+
+	/** return Hausdorff distance between locations of transform arrays
+	  * maximum distance of a set to the nearest point in the other set
+	  * @rotation set to true if use rotation different; false otherwise
+	  * @return Hausdorff distance*/
+	float Hausdorff(TArray<FTransform> set1, TArray<FTransform> set2, bool rotation);
 
 	/** Use info from entire run and target run to calculate cost
 	  * TODO may store along way and then use changes made (e.g. additional regularization for minimal input change)*/

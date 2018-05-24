@@ -370,7 +370,11 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 	{
 		if (bGenerateDrift)
 		{
-			GetVehicleMovementComponent()->SetSteeringInput(0.05f + steerAdjust); // generate slight drift right
+			GetVehicleMovementComponent()->SetSteeringInput(0.05f + steerAdjust); // generate slight drift right TODO change value?
+		}
+		else
+		{
+			GetVehicleMovementComponent()->SetSteeringInput(steerAdjust);
 		}
 		if (bModelready && expectedFuture->bIsReady)
 		{
@@ -420,6 +424,10 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 		PathLocations.Add(this->GetTransform()); 
 		VelocityAlongPath.Add(this->GetVelocity());
 		RPMAlongPath.Add(GetVehicleMovement()->GetEngineRotationSpeed());
+	}
+	if (vehicleType == ECarType::ECT_prediction || vehicleType == ECarType::ECT_test)
+	{
+		GetVehicleMovementComponent()->SetSteeringInput(steerAdjust);
 	}
 	/************************************************************************/
 
@@ -501,6 +509,9 @@ void AVehicleAdv3Pawn::BeginPlay()
 	if (vehicleType == ECarType::ECT_actual)
 	{
 		GetWorldTimerManager().SetTimer(GenerateExpectedTimerHandle, this, &AVehicleAdv3Pawn::RunTestOrExpect, float(HORIZON) * 2.f, true, 0.f);
+
+		// set timer to use to time run
+		GetWorldTimerManager().SetTimer(RunTimerHandle, 1000.f, true, 0.f);
 	}
 	/************************************************************************/
 }
@@ -572,7 +583,7 @@ void AVehicleAdv3Pawn::RunTestOrExpect()
 
 void AVehicleAdv3Pawn::GenerateExpected()
 {
-	//GetWorldTimerManager().PauseTimer(GenerateExpectedTimerHandle);
+	GetWorldTimerManager().PauseTimer(RunTimerHandle);
 
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("Generating Expected"));
 	UE_LOG(VehicleRunState, Log, TEXT("Generating Expected"));
@@ -753,7 +764,7 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 		32,
 		FColor(255, 0, 0),
 		false,
-		(HORIZON * 3.f)
+		(HORIZON * 4.f)
 	);
 
 	UE_LOG(VehicleRunState, Log, TEXT("Expected final location: %s"), *this->expectedFuture->GetTransform().GetLocation().ToString());
@@ -770,6 +781,8 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 	AtTickLocation = 0;
 
 	//InduceSteeringError();
+
+	GetWorldTimerManager().UnPauseTimer(RunTimerHandle);
 
 	bLocationErrorFound = false;
 	bRotationErrorFound = false;
@@ -848,6 +861,8 @@ void AVehicleAdv3Pawn::ResumeTargetRun()
 
 	realcar->GetWorldTimerManager().UnPauseTimer(realcar->GenerateExpectedTimerHandle);
 	realcar->GetWorldTimerManager().UnPauseTimer(realcar->HorizonTimerHandle);
+	realcar->GetWorldTimerManager().UnPauseTimer(realcar->RunTimerHandle);
+
 	//realcar->GetWorldTimerManager().SetTimer(GenerateExpectedTimerHandle, this, &AVehicleAdv3Pawn::RunTestOrExpect, float(HORIZON) * 2.f, true, 0.f);
 }
 
@@ -894,19 +909,19 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 		// adjust based on if too fast or too slow or don't know
 		if (errorDiagnosticResults.nSpeedDiff == -2) // reversed
 		{
-			copy->throttleAdjust = FMath::RandRange(0.f, 1.f);
+			copy->throttleAdjust = FMath::RandRange(0.f, 0.02f);
 		}
 		else if (errorDiagnosticResults.nSpeedDiff == -1) // too slow
 		{
-			copy->throttleAdjust = FMath::RandRange(0.f, 1.f);
+			copy->throttleAdjust = FMath::RandRange(0.f, 0.02f);
 		}
 		else if (errorDiagnosticResults.nSpeedDiff == 1) // too fast
 		{
-			copy->throttleAdjust = FMath::RandRange(-1.f, 0.f);
+			copy->throttleAdjust = FMath::RandRange(-0.02f, 0.f);
 		}
 		else
 		{
-			copy->throttleAdjust = FMath::RandRange(-1.f, 1.f);
+			copy->throttleAdjust = FMath::RandRange(-0.02f, 0.02f);
 		}
 		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("TrhottleAdjust %f"), copy->throttleAdjust));
 
@@ -915,24 +930,24 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	{
 		if (errorDiagnosticResults.nDrift == RIGHT)
 		{
-			copy->steerAdjust = FMath::RandRange(-5.f, 0.f);
+			copy->steerAdjust = FMath::RandRange(-0.08f, 0.f);
 		}
 		else if (errorDiagnosticResults.nDrift == LEFT)
 		{
-			copy->steerAdjust = FMath::RandRange(0.f, 5.f);
+			copy->steerAdjust = FMath::RandRange(0.f, 0.05f);
 		}
 		else
 		{
 			// don't know which way drifting
-			copy->steerAdjust = FMath::RandRange(-5.f, 5.f);
+			copy->steerAdjust = FMath::RandRange(-0.1f, 0.0f); // TODO change these values back
 		}
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("SteerAdjust %f"), steerAdjust));
+		GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Black, FString::Printf(TEXT("SteerAdjust %f"), copy->steerAdjust));
 
 	}
 	// store what change we're trying and in resume, what it's corresponding result is
 	//currentRun = UTestRunData::MAKE(steerAdjust, throttleAdjust);
 	currentRun = NewObject<UTestRunData>();
-	currentRun->Initialize(steerAdjust, throttleAdjust);
+	currentRun->Initialize(copy->steerAdjust, copy->throttleAdjust);
 	// switch controller to temp vehicle
 	if (controller)
 	{
@@ -974,16 +989,20 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 	this->GetVehicleMovement()->SetEngineRotationSpeed(this->ResetRPM);
 	// destroy temp vehicle
 
-	// TODO calculate cost
-	SCostComponents t;
-	SCostComponents x;
-	t.location = this->expectedFuture->GetTransform().GetLocation();;
-	x.location = StoredCopy->GetTransform().GetLocation();
-	t.rotation = expectedFuture->GetTransform().GetRotation();
-	x.rotation = StoredCopy->GetTransform().GetRotation();
-	t.rpm = expectedFuture->GetRMPValues().Last(); 
-	x.rpm = StoredCopy->GetVehicleMovementComponent()->GetEngineRotationSpeed();
-	float loss = QuadraticLoss(x, t);
+	// calculate cost
+	SCostComponents test;
+	SCostComponents expected;
+	SCostComponents actual;
+	expected.location = this->expectedFuture->GetTransform().GetLocation();;
+	test.location = StoredCopy->GetTransform().GetLocation();
+	actual.location = this->GetActorTransform().GetLocation();
+	expected.rotation = expectedFuture->GetTransform().GetRotation();
+	test.rotation = StoredCopy->GetTransform().GetRotation();
+	actual.rotation = this->GetTransform().GetRotation();
+	expected.rpm = expectedFuture->GetRMPValues().Last();
+	test.rpm = StoredCopy->GetVehicleMovementComponent()->GetEngineRotationSpeed();
+	actual.rpm = this->GetVehicleMovementComponent()->GetEngineRotationSpeed();
+	float loss = QuadraticLoss(expected, test, actual);
 	float reg = Regularize(currentRun->GetThrottleChange(), currentRun->GetSteeringChange());
 	float goalBonus = 0.f;
 	if (currentRun->hitgoal)
@@ -993,8 +1012,6 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 	float cost = loss + reg - goalBonus;
 	UE_LOG(ErrorCorrection, Log, TEXT("Cost for run %i %f"), NUM_TEST_CARS - runCount, cost);
 
-	
-
 	if (!lowestCost || lowestCost == -1.)
 	{
 		lowestCost = cost;
@@ -1002,6 +1019,7 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 	}
 	else if (lowestCost > cost)
 	{
+		lowestCost = cost;
 		bestRun = currentRun;
 	}
 	// on last run, apply input adjustments with best result
@@ -1009,6 +1027,10 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 	{
 		throttleAdjust = bestRun->GetThrottleChange();
 		steerAdjust = bestRun->GetSteeringChange();
+
+		GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, FString::Printf(TEXT("SteerAdjust Selected %f"), steerAdjust));
+		GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, FString::Printf(TEXT("ThrottleAdjust Selected %f"), throttleAdjust));
+
 	}
 	this->StoredCopy->Destroy();
 	//this->dataForSpawn->BeginDestroy();
@@ -1207,28 +1229,77 @@ void AVehicleAdv3Pawn::ErrorTriage(int index, bool cameraError, bool headingErro
 }
 
 
-float AVehicleAdv3Pawn::QuadraticLoss(SCostComponents x, SCostComponents t)
+float AVehicleAdv3Pawn::QuadraticLoss(SCostComponents expected, SCostComponents test, SCostComponents actual)
 {
 	float total = 0;
 	// diff in location
-	total += FMath::Pow(FVector::DistSquaredXY(t.location, x.location) , 2);
+	total += FMath::Pow(FVector::DistSquaredXY(test.location + actual.location, expected.location) , 2);
 	// diff in rotation
-	total += FMath::Pow(t.rotation.AngularDistance(x.rotation), 2);
+	total += FMath::Pow(test.rotation.AngularDistance(expected.rotation + actual.rotation), 2);
 	// diff in rpm
-	total += FMath::Pow(t.rpm - x.rpm, 2);
+	total += FMath::Pow((test.rpm + actual.rpm) - expected.rpm, 2);
 	return total;
+}
+
+float AVehicleAdv3Pawn::Hausdorff(TArray<FTransform> set1, TArray<FTransform> set2, bool rotation)
+{
+	// compute and return Hausdorff dist
+	// based off pseudocode from http://cgm.cs.mcgill.ca/~godfried/teaching/cg-projects/98/normand/main.html
+	
+	float h = 0.f;
+	for (FTransform a : set1)
+	{
+		float shortest = TNumericLimits< float >::Max();
+		for (FTransform b : set2)
+		{
+			float dist = 0.f;
+			if (rotation)
+			{
+				FQuat rotA = a.GetRotation();
+				FQuat rotB = b.GetRotation();
+				dist = rotA.AngularDistance(rotB);
+			}
+			else
+			{
+				FVector locA = a.GetLocation();
+				FVector locB = b.GetLocation();
+				dist = locA.DistSquaredXY(locA, locB);
+			}
+			if (dist < shortest)
+			{
+				shortest = dist;
+			}
+		}
+		if (shortest > h)
+		{
+			h = shortest;
+		}
+	}
+	return h;
 }
 
 void AVehicleAdv3Pawn::CalculateTotalRunCost()
 {
 	// TODO calculate total run cost
 	float total = 0;
-	// diff in location
-	total += FMath::Pow(FVector::DistSquaredXY(t.location, x.location), 2);
-	// diff in rotation
-	total += FMath::Pow(t.rotation.AngularDistance(x.rotation), 2);
-	// diff in rpm
-	total += FMath::Pow(t.rpm - x.rpm, 2);
+
+	// TODO get run time difference
+	float runtime = GetWorldTimerManager().GetTimerElapsed(RunTimerHandle);
+	GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(55, 25, 20), FString::Printf(TEXT("Run Time; %f"), runtime));
+
+	GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(55, 25, 20), FString::Printf(TEXT("Run Time Expected; %f"), targetRunData->GetRunTime()));
+	UE_LOG(VehicleRunState, Log, TEXT("Run Time; %f"), runtime);
+	UE_LOG(VehicleRunState, Log, TEXT("Run Time Expected; %f"), targetRunData->GetRunTime());
+
+
+
+	// compare paths
+	float hdist = Hausdorff(targetRunData->GetPath(), PathLocations, false); // TODO make sure path locations are what we want
+	total += FMath::Pow(hdist, 2);
+
+	// compare path rotations TODO does this even make sense to do? kind of, since if the car never points backwards in target but does in 'real' then that's probably not good <-- maybe weigth this less?
+	float hdistrot = Hausdorff(targetRunData->GetPath(), PathLocations, true); // TODO make sure path locations are what we want
+	total += FMath::Pow(hdistrot, 2);
 
 	// log cost
 	UE_LOG(VehicleRunState, Log, TEXT("Total run cost: %f"), total);
@@ -1239,7 +1310,7 @@ void AVehicleAdv3Pawn::CalculateTotalRunCost()
 float AVehicleAdv3Pawn::Regularize(float deltaThrottle, float deltaSteer)
 {
 	// TODO adjust lambda
-	float lambda = 1.f;
+	float lambda = 0.1f;
 	return lambda * FMath::Abs(deltaThrottle) + FMath::Abs(deltaSteer);
 }
 
