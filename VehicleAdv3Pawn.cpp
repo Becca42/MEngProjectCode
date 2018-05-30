@@ -419,7 +419,8 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 	}
 
 	// save path data for copies
-	if (vehicleType == ECarType::ECT_prediction || vehicleType == ECarType::ECT_target)
+	//if (vehicleType != ECarType::ECT_actual)
+	if (true)
 	{
 		PathLocations.Add(this->GetTransform()); 
 		VelocityAlongPath.Add(this->GetVelocity());
@@ -428,6 +429,13 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 	if (vehicleType == ECarType::ECT_prediction || vehicleType == ECarType::ECT_test)
 	{
 		GetVehicleMovementComponent()->SetSteeringInput(steerAdjust);
+		AtTickLocation++;
+	}
+
+	// store performance information at intervals for test runs
+	if (vehicleType==ECarType::ECT_test && horizon==HORIZON && tickAtHorizon < 0) // TODO gets in here more than once because horizon increments on seconds w/timer, but ticks are much faster
+	{
+		tickAtHorizon = AtTickLocation;		
 	}
 	/************************************************************************/
 
@@ -502,7 +510,7 @@ void AVehicleAdv3Pawn::BeginPlay()
 	UE_LOG(VehicleRunState, Log, TEXT("Initial steering input: %f"), steerInput);
 
 
-	// timer for horizon (stops simulation after horizon reached)
+	// timer for horizon (stops simulation after horizon reached) TODO use longer time for hypothesis cars
 	GetWorldTimerManager().SetTimer(HorizonTimerHandle, this, &AVehicleAdv3Pawn::HorizonTimer, 1.0f, true, 0.f);
 
 	// timer for model generation, generates a new model up to HORIZON every HORIZON seconds -- TODO maybe do at different intervals
@@ -780,7 +788,12 @@ void AVehicleAdv3Pawn::ResumeExpectedSimulation()
 	// reset for error detection
 	AtTickLocation = 0;
 
-	//InduceSteeringError();
+	InduceSteeringError();
+
+	// empty information before next run
+	PathLocations.Empty();
+	VelocityAlongPath.Empty();
+	RPMAlongPath.Empty();
 
 	GetWorldTimerManager().UnPauseTimer(RunTimerHandle);
 
@@ -872,10 +885,14 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("Generating Test Runs"));
 	UE_LOG(ErrorCorrection, Log, TEXT("Generating Diagnostic Run %i"), NUM_TEST_CARS - runCount);
 
+	tickAtHorizon = -1;
+	AtTickLocation = 0;
+
 	GetWorldTimerManager().PauseTimer(GenerateExpectedTimerHandle);
 	// keep track of when done running tests
 	runCount--; // resets to original value every time... why?
 	horizonCountdown = true;
+	horizon = 2 * HORIZON; // simulate further into the future
 	this->SetActorTickEnabled(false);
 
 	AController* controller = this->GetController();
@@ -989,27 +1006,7 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 	this->GetVehicleMovement()->SetEngineRotationSpeed(this->ResetRPM);
 	// destroy temp vehicle
 
-	// calculate cost
-	SCostComponents test;
-	SCostComponents expected;
-	SCostComponents actual;
-	expected.location = this->expectedFuture->GetTransform().GetLocation();;
-	test.location = StoredCopy->GetTransform().GetLocation();
-	actual.location = this->GetActorTransform().GetLocation();
-	expected.rotation = expectedFuture->GetTransform().GetRotation();
-	test.rotation = StoredCopy->GetTransform().GetRotation();
-	actual.rotation = this->GetTransform().GetRotation();
-	expected.rpm = expectedFuture->GetRMPValues().Last();
-	test.rpm = StoredCopy->GetVehicleMovementComponent()->GetEngineRotationSpeed();
-	actual.rpm = this->GetVehicleMovementComponent()->GetEngineRotationSpeed();
-	float loss = QuadraticLoss(expected, test, actual);
-	float reg = Regularize(currentRun->GetThrottleChange(), currentRun->GetSteeringChange());
-	float goalBonus = 0.f;
-	if (currentRun->hitgoal)
-	{
-		goalBonus = 10.f;
-	}
-	float cost = loss + reg - goalBonus;
+	float cost = calculateTestCost();
 	UE_LOG(ErrorCorrection, Log, TEXT("Cost for run %i %f"), NUM_TEST_CARS - runCount, cost);
 
 	if (!lowestCost || lowestCost == -1.)
@@ -1031,10 +1028,49 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 		GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, FString::Printf(TEXT("SteerAdjust Selected %f"), steerAdjust));
 		GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Green, FString::Printf(TEXT("ThrottleAdjust Selected %f"), throttleAdjust));
 
+		// empty information before next run
+		PathLocations.Empty();
+		VelocityAlongPath.Empty();
+		RPMAlongPath.Empty();
 	}
 	this->StoredCopy->Destroy();
-	//this->dataForSpawn->BeginDestroy();
+	
+
 	GetWorldTimerManager().UnPauseTimer(GenerateExpectedTimerHandle);
+}
+
+float AVehicleAdv3Pawn::calculateTestCost()
+{
+	// Weight performance at various intervals (horizon & 2xhorizon(end) for now)
+	float endWeight = 0.5f;
+	float horizonWeight = 1.f;
+
+	// TODO get performance at horizon TODO do we even have all the info we need?
+	SCostComponents test;
+	SCostComponents expected;
+	SCostComponents actual;
+	expected.location = this->expectedFuture->GetTransform().GetLocation(); // (note: horizon will still be last in sequence for non-test cars)
+	test.location = StoredCopy->PathLocations[StoredCopy->tickAtHorizon].GetLocation();
+	actual.location = this->GetActorTransform().GetLocation();
+	expected.rotation = expectedFuture->GetTransform().GetRotation();
+	test.rotation = StoredCopy->PathLocations[StoredCopy->tickAtHorizon].GetRotation();
+	actual.rotation = this->GetTransform().GetRotation();
+	expected.rpm = expectedFuture->GetRMPValues().Last();
+	test.rpm = StoredCopy->RPMAlongPath[StoredCopy->tickAtHorizon];
+	actual.rpm = this->GetVehicleMovementComponent()->GetEngineRotationSpeed();
+	float lossHorizon = QuadraticLoss(expected, test, actual);
+
+	// performance at 2x horizon: look at proximity to goal
+	FVector endLocationTest = StoredCopy->GetTransform().GetLocation();
+	float lossEnd = distanceToGoal(endLocationTest);
+
+	float reg = Regularize(currentRun->GetThrottleChange(), currentRun->GetSteeringChange());
+	float goalBonus = 0.f;
+	if (currentRun->hitgoal)
+	{
+		goalBonus = 10.f;
+	}
+	return endWeight * lossEnd + horizonWeight * lossHorizon + reg - goalBonus;
 }
 
 TArray<float>* AVehicleAdv3Pawn::RotationErrorInfo(int index)
@@ -1283,7 +1319,7 @@ void AVehicleAdv3Pawn::CalculateTotalRunCost()
 	// TODO calculate total run cost
 	float total = 0;
 
-	// TODO get run time difference
+	// get run time difference
 	float runtime = GetWorldTimerManager().GetTimerElapsed(RunTimerHandle);
 	GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::FColor(55, 25, 20), FString::Printf(TEXT("Run Time; %f"), runtime));
 
@@ -1291,7 +1327,7 @@ void AVehicleAdv3Pawn::CalculateTotalRunCost()
 	UE_LOG(VehicleRunState, Log, TEXT("Run Time; %f"), runtime);
 	UE_LOG(VehicleRunState, Log, TEXT("Run Time Expected; %f"), targetRunData->GetRunTime());
 
-
+	total += FMath::Pow(targetRunData->GetRunTime() - runtime, 2.f);
 
 	// compare paths
 	float hdist = Hausdorff(targetRunData->GetPath(), PathLocations, false); // TODO make sure path locations are what we want
@@ -1312,6 +1348,20 @@ float AVehicleAdv3Pawn::Regularize(float deltaThrottle, float deltaSteer)
 	// TODO adjust lambda
 	float lambda = 0.1f;
 	return lambda * FMath::Abs(deltaThrottle) + FMath::Abs(deltaSteer);
+}
+
+float AVehicleAdv3Pawn::distanceToGoal(FVector objLocation)
+{
+	// get goal(s) from scene
+	TArray<AActor*> FoundActors;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ACustomRamp::StaticClass(), FoundActors);
+	//turn off collision for ramps (no collide with simulated vehicle)
+	for (AActor* goal : FoundActors)
+	{
+		return objLocation.DistSquaredXY(objLocation, goal->GetActorTransform.GetActorLocation);
+	}
+	// can't find goal
+	return -1.f;
 }
 
 void AVehicleAdv3Pawn::InduceDragError()
@@ -1365,7 +1415,7 @@ void AVehicleAdv3Pawn::BeginOverlap(class AActor* ThisActor, class AActor* Other
 		{
 			// stop generate predictions etc.
 			GetWorldTimerManager().PauseTimer(GenerateExpectedTimerHandle);
-			GetWorldTimerManager().PauseTimer(HorizonTimerHandle);
+			GetWorldTimerManager().PauseTimer(RunTimerHandle);
 			// do cost calcuation
 			CalculateTotalRunCost();
 		}

@@ -221,6 +221,7 @@ public:
 	TArray<FVector> VelocityAlongPath;
 	TArray<float> RPMAlongPath;
 	TMap<int32, TArray<ALandmark*>> LandmarksAlongPath;
+	int tickAtHorizon; // which tick (i.e. index in above arrays) occurs at time=HORIZON
 
 	/* data for spawning vehicles */
 	bool bRunDiagnosticTests;
@@ -291,6 +292,9 @@ public:
 	/** TODO */
 	void ResumeFromDiagnostic();
 
+	/** calculate cost of test run */
+	float calculateTestCost();
+
 	/** get info about severity of rotation error
 	 * @param index in simulated data where error found
 	 * @return TArray of floats representing (respectively) angular distance (in radians), veering (LEFT/RIGHT), dot product or nullptr if expectedfuture is null */
@@ -332,6 +336,9 @@ public:
 	/** regularization term to preference smallest difference in inputs
 	  * @return regularization term for cost calculation  */
 	float Regularize(float deltaThrottle, float deltaSteer);
+
+	/** @returns distance to goal. Assumes only 1 goal in scene */
+	float distanceToGoal(FVector objLocation);
 	
 	/** Induce error (callback for 'I' keypress) by increasing drag 10x */
 	void InduceDragError();
