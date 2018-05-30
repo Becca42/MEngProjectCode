@@ -20,6 +20,7 @@
 UENUM(Meta = (Bitflags))
 enum class ECarType
 {
+	ECT_datagen,
 	ECT_target,
 	ECT_prediction,
 	ECT_actual,
@@ -283,14 +284,21 @@ public:
 	/** Resumes primary vehicles, saves information about expected path and destroys temp vehicle */
 	void ResumeExpectedSimulation();
 
-	/** TODO */
+	/** Resumes from target run, restarts primary car, saves target run data and destroys target vehicle */
 	void ResumeTargetRun();
 
-	/** TODO */
+	/** pause primary vehicle, create clone, change copy car input */
 	void GenerateDiagnosticRuns();
 
-	/** TODO */
+	/** Resumes from test run, restarts primary car, checks performance (cost) of test run 
+	and saves if best so far and destroys test vehicle. After last test run  */
 	void ResumeFromDiagnostic();
+
+	/** TODO */
+	void GenerateDataCollectionRun();
+
+	/** TODO */
+	void ResumeFromDataGen();
 
 	/** calculate cost of test run */
 	float calculateTestCost();

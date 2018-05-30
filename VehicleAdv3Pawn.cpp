@@ -1039,6 +1039,17 @@ void AVehicleAdv3Pawn::ResumeFromDiagnostic()
 	GetWorldTimerManager().UnPauseTimer(GenerateExpectedTimerHandle);
 }
 
+void AVehicleAdv3Pawn::GenerateDataCollectionRun()
+{
+	// TODO run through list of steering and throttle inputs (along an din pairs) and store results
+
+}
+
+void AVehicleAdv3Pawn::ResumeFromDataGen()
+{
+	//TODO save data and start next run
+}
+
 float AVehicleAdv3Pawn::calculateTestCost()
 {
 	// Weight performance at various intervals (horizon & 2xhorizon(end) for now)
@@ -1354,14 +1365,14 @@ float AVehicleAdv3Pawn::distanceToGoal(FVector objLocation)
 {
 	// get goal(s) from scene
 	TArray<AActor*> FoundActors;
-	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ACustomRamp::StaticClass(), FoundActors);
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AGoal::StaticClass(), FoundActors);
 	//turn off collision for ramps (no collide with simulated vehicle)
 	for (AActor* goal : FoundActors)
 	{
-		return objLocation.DistSquaredXY(objLocation, goal->GetActorTransform.GetActorLocation);
+		return objLocation.DistSquaredXY(objLocation, goal->GetTransform().GetLocation());
 	}
 	// can't find goal
-	return -1.f;
+	return TNumericLimits< float >::Max();
 }
 
 void AVehicleAdv3Pawn::InduceDragError()
@@ -1435,7 +1446,18 @@ void AVehicleAdv3Pawn::HorizonTimer()
 		--horizon;
 		if (horizon < 1 && vehicleType != ECarType::ECT_target) // won't resume from target run until goal is reached
 		{
-			bGenExpected ? ResumeExpectedSimulation() : ResumeFromDiagnostic();
+			if (vehicleType == ECarType::ECT_datagen)
+			{
+				ResumeFromDataGen();
+			}
+			else if (bGenExpected)
+			{
+				ResumeExpectedSimulation();
+			}
+			else
+			{
+				ResumeFromDiagnostic();
+			}
 		}
 	}
 }
