@@ -186,6 +186,7 @@ AVehicleAdv3Pawn::AVehicleAdv3Pawn()
 	/************************************************************************/
 	/*						New Code                                        */
 	vehicleType = ECarType::ECT_actual;
+	doDataGen = true; // TODO get rid of this later
 
 	// add handler for goal overlap
 	OnActorBeginOverlap.AddDynamic(this, &AVehicleAdv3Pawn::BeginOverlap);
@@ -278,7 +279,7 @@ void AVehicleAdv3Pawn::Tick(float Delta)
 
 
 	// more car forward at a steady rate (for primary and simulation)
-	UE_LOG(VehicleRunState, Log, TEXT("Throttle input: %f"), throttleInput + throttleAdjust);
+	//UE_LOG(VehicleRunState, Log, TEXT("Throttle input: %f"), throttleInput + throttleAdjust);
 	GetVehicleMovementComponent()->SetThrottleInput(throttleInput + throttleAdjust); 
 
 	// get current location
@@ -514,7 +515,7 @@ void AVehicleAdv3Pawn::BeginPlay()
 	GetWorldTimerManager().SetTimer(HorizonTimerHandle, this, &AVehicleAdv3Pawn::HorizonTimer, 1.0f, true, 0.f);
 
 	// timer for model generation, generates a new model up to HORIZON every HORIZON seconds -- TODO maybe do at different intervals
-	if (vehicleType == ECarType::ECT_actual)
+	if (vehicleType == ECarType::ECT_actual || vehicleType == ECarType::ECT_datagen)
 	{
 		GetWorldTimerManager().SetTimer(GenerateExpectedTimerHandle, this, &AVehicleAdv3Pawn::RunTestOrExpect, float(HORIZON) * 2.f, true, 0.f);
 
@@ -568,14 +569,21 @@ bool AVehicleAdv3Pawn::CheckLandmarkHit(TArray<ALandmark*>* expectedLandmarks, A
 
 void AVehicleAdv3Pawn::RunTestOrExpect()
 {
-	int debug = 0;
+	if (vehicleType == ECarType::ECT_datagen)
+	{
+		return;
+	}
+	if (doDataGen)
+	{
+		GenerateDataCollectionRun();
+	}
 	// see if target run needs to be generated *first*
-	if (!targetRunData)
+	else if (!targetRunData)
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("Generating Target Run."));
 		UE_LOG(VehicleRunState, Log, TEXT("Generating Target Run."));
-		// TODO generate target run by spawning target vehicle
-		GenerateExpected();
+		// generate target run by spawning target vehicle
+		GenerateExpected(); // TODO why are getting here?
 	}
 	else if (bRunDiagnosticTests)
 	{
@@ -1054,6 +1062,10 @@ void AVehicleAdv3Pawn::GenerateDataCollectionRun()
 	}
 	// spawn new car rigamarol
 	GetWorldTimerManager().PauseTimer(RunTimerHandle);
+	if (vehicleType == ECarType::ECT_actual)
+	{
+		GetWorldTimerManager().PauseTimer(GenerateExpectedTimerHandle);
+	}
 
 	// begin horizon countdown
 	//bGenExpected = true;
@@ -1088,9 +1100,11 @@ void AVehicleAdv3Pawn::GenerateDataCollectionRun()
 	FActorSpawnParameters params = FActorSpawnParameters();
 	// make sure copy will be flagged as copy
 	this->vehicleType = ECarType::ECT_datagen;
+	doDataGen = false;
 	params.Template = this;
 	AVehicleAdv3Pawn *copy = GetWorld()->SpawnActor<AVehicleAdv3Pawn>(this->GetClass(), params);
 	copy->vehicleType = ECarType::ECT_datagen;
+	copy->doDataGen = false;
 
 	// reset primary state after copying
 	this->vehicleType = ECarType::ECT_actual;
@@ -1164,7 +1178,7 @@ void AVehicleAdv3Pawn::ResumeFromDataGen()
 	UE_LOG(ErrorCorrection, Log, TEXT("End Transform: %s"), *this->StoredCopy->GetTransform().ToString());
 	this->StoredCopy->Destroy();
 	GenerateDataCollectionRun();
-}
+}	
 
 float AVehicleAdv3Pawn::calculateTestCost()
 {
@@ -1562,7 +1576,7 @@ void AVehicleAdv3Pawn::HorizonTimer()
 		--horizon;
 		if (horizon < 1 && vehicleType != ECarType::ECT_target) // won't resume from target run until goal is reached
 		{
-			if (vehicleType == ECarType::ECT_datagen)
+			if (StoredCopy->vehicleType == ECarType::ECT_datagen)
 			{
 				ResumeFromDataGen();
 			}

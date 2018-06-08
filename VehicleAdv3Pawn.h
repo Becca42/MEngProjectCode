@@ -216,6 +216,8 @@ public:
 	float throttleAdjust;
 	float steerAdjust;
 
+	// flag for datagen
+	bool doDataGen;
 	// used to test input change resutls
 	int controlInputIndex = 0;
 
