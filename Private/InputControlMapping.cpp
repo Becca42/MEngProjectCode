@@ -50,7 +50,9 @@ void UInputControlMapping::calculateDistances()
 		FTransform endTransform = EndTransforms->operator[](i);
 		float distance =FVector::DistSquaredXY(startTransform->GetLocation(), endTransform.GetLocation());
 
-		distance = FMath::Round(distance);
+		// bucket distances rounded to 1 decimal place
+		//distance = FMath::Round(distance * 100.f)/100.f;
+		distance = FMath::Round(distance * 100.f) ;
 
 		// REMOVE - DEBUG
 		UE_LOG(VehicleRunState, Log, TEXT("distance: %f"), distance);
