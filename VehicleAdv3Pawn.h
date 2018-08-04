@@ -8,6 +8,7 @@
 #include "Landmark.h"
 #include "TestRunData.h"
 #include "CopyVehicleData.h"
+#include "InputControlMapping.h"
 #include "VehicleAdv3Pawn.generated.h"
 
 /************************************************************************/
@@ -232,6 +233,10 @@ public:
 	/* data for spawning vehicles */
 	bool bRunDiagnosticTests;
 	
+	/* obj to hold input mappings for sampling during test */
+	UPROPERTY(EditAnywhere)
+	UInputControlMapping* InputMapping;
+
 	UPROPERTY(EditAnywhere)
 	UCopyVehicleData* dataForSpawn;
 	SDiagnostics errorDiagnosticResults;

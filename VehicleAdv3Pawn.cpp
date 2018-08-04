@@ -40,7 +40,8 @@ const FName AVehicleAdv3Pawn::EngineAudioRPM("RPM");
 #define LOCTEXT_NAMESPACE "VehiclePawn"
 
 AVehicleAdv3Pawn::AVehicleAdv3Pawn()
-{
+{ // UObject() constructor called but it's not the object that's currently being constructed with NewObject. Maybe you trying to construct it on the stack which is not supported.
+
 	// Car mesh
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh> CarMesh(TEXT("/Game/VehicleAdv/Vehicle/Vehicle_SkelMesh.Vehicle_SkelMesh"));
 	GetMesh()->SetSkeletalMesh(CarMesh.Object);
@@ -186,7 +187,7 @@ AVehicleAdv3Pawn::AVehicleAdv3Pawn()
 	/************************************************************************/
 	/*						New Code                                        */
 	vehicleType = ECarType::ECT_actual;
-	doDataGen = true; // TODO get rid of this later
+	doDataGen = false; // set to true to do input  controls data generation (takes a v. long time)
 
 	// add handler for goal overlap
 	OnActorBeginOverlap.AddDynamic(this, &AVehicleAdv3Pawn::BeginOverlap);
@@ -504,12 +505,12 @@ void AVehicleAdv3Pawn::BeginPlay()
 	steerAdjust = 0.f;
 	bRunDiagnosticTests = false;
 
+	// setup for input selection during test from output measures
+	InputMapping = NewObject<UInputControlMapping>();
+	InputMapping->init();
+
 	UE_LOG(VehicleRunState, Log, TEXT("Initial throttle input: %f"), throttleInput);
 	UE_LOG(VehicleRunState, Log, TEXT("Initial steering input: %f"), steerInput);
-
-	UE_LOG(LogTemp, Warning, TEXT("DEBUG LOGGING"));
-	UE_LOG(VehicleRunState, Log, TEXT("Initial steering input: %f"), steerInput);
-
 
 	// timer for horizon (stops simulation after horizon reached) TODO use longer time for hypothesis cars
 	GetWorldTimerManager().SetTimer(HorizonTimerHandle, this, &AVehicleAdv3Pawn::HorizonTimer, 1.0f, true, 0.f);
@@ -575,7 +576,7 @@ void AVehicleAdv3Pawn::RunTestOrExpect()
 	}
 	if (doDataGen)
 	{
-		GenerateDataCollectionRun();
+		//GenerateDataCollectionRun();
 	}
 	// see if target run needs to be generated *first*
 	else if (!targetRunData)
@@ -927,6 +928,8 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	copyMoveComp->SetTargetGear(moveComp->GetCurrentGear(), true);
 	copyMoveComp->SetEngineRotationSpeed(dataForSpawn->GetRpm());
 	this->StoredCopy = copy; // TODO make sure copy isn't empty/stored copy is set appropriately
+
+	// TODO_NOW use generated data to pick corrections <-- feels like there is more to this...
 
 	// adjust throttle and steering (TODO maybe move this to sep function)
 	if (errorDiagnosticResults.bTryThrottle)
