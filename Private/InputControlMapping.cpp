@@ -1,7 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "VehicleAdv3.h"
 #include "InputControlMapping.h"
+#include "VehicleAdv3.h"
 
 
 
@@ -20,7 +20,19 @@ void UInputControlMapping::init()
 	}
 
 	buildTransforms();
-	calculateDistances();
+	calculateDistances(1);
+}
+
+void UInputControlMapping::init(int metric)
+{
+
+	if (EndTransforms && EndTransforms->Num() > 0)
+	{
+		return;
+	}
+
+	buildTransforms();
+	calculateDistances(metric);
 }
 
 void UInputControlMapping::buildTransforms()
@@ -37,44 +49,49 @@ void UInputControlMapping::buildTransforms()
 	}
 }
 
-void UInputControlMapping::calculateDistances()
+void UInputControlMapping::calculateDistances(int metric)
 {
 	// TODO calculate and store distances for each end transform 
 	//so to use would first sample uniformly at random from keys in map then if the key (distance) maps to more than one input set, again sample at random for the values
 
-	distacneMappings = *(new TMap<float, TArray<int>>);
-
+	distanceMappings = *(new TMap<float, TArray<int>>);
+	FQuat startRotation = startTransform->GetRotation();
+	FVector startLocation = startTransform->GetLocation();
 	// loop through array of end transforms and compute distance
 	for (int i = 0; i < 2090; i++)
 	{
 		FTransform endTransform = EndTransforms->operator[](i);
-		float distance =FVector::DistSquaredXY(startTransform->GetLocation(), endTransform.GetLocation());
-
-		// bucket distances rounded to 1 decimal place
-		//distance = FMath::Round(distance * 100.f)/100.f;
-		distance = FMath::Round(distance * 100.f) ;
-
-		// REMOVE - DEBUG
-		UE_LOG(VehicleRunState, Log, TEXT("distance: %f"), distance);
-
+		float distance;
+		if (metric == 1)
+		{
+			distance = FVector::DistSquaredXY(startLocation, endTransform.GetLocation());
+			// bucket distances rounded to 1 decimal place
+			//distance = FMath::Round(distance * 100.f)/100.f;
+			distance = FMath::Round(distance * 100.f);
+		}
+		else if (metric == 2)
+		{
+			distance = startRotation.AngularDistance(endTransform.GetRotation());
+		}
+		else
+		{
+			return;
+		}
 
 		// if distance is not in map already, add
-		if (distacneMappings.Contains(distance))
+		if (distanceMappings.Contains(distance))
 		{
-			// REMOVE - DEBUG
-			UE_LOG(VehicleRunState, Log, TEXT("first in array: %f"), distacneMappings[distance][0]);
-
 			TArray<int> newArray;
-			distacneMappings.RemoveAndCopyValue(distance, newArray);
+			distanceMappings.RemoveAndCopyValue(distance, newArray);
 			newArray.Add(i);
-			distacneMappings.Add(distance, newArray);
+			distanceMappings.Add(distance, newArray);
 		}
 		// else (if distance in map) append index to controls OR controls <-- decide this) to map
 		else
 		{
 			TArray<int> newArray = *(new TArray<int>());
 			newArray.Add(i);
-			distacneMappings.Add(distance, newArray);
+			distanceMappings.Add(distance, newArray);
 		}
 	}
 

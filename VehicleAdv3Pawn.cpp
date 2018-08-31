@@ -930,45 +930,52 @@ void AVehicleAdv3Pawn::GenerateDiagnosticRuns()
 	this->StoredCopy = copy; // TODO make sure copy isn't empty/stored copy is set appropriately
 
 	// TODO_NOW use generated data to pick corrections <-- feels like there is more to this...
+	// will use InputMapping & randomly sample from it
+	TArray<float> keys;
+	InputMapping->distanceMappings.GetKeys(keys);
+	TArray<int> indices = InputMapping->distanceMappings[keys[FMath::RandRange(0, keys.Num() - 1)]];
+	int selectedIndex = indices[FMath::RandRange(0, indices.Num() - 1)];
 
 	// adjust throttle and steering (TODO maybe move this to sep function)
 	if (errorDiagnosticResults.bTryThrottle)
 	{
-		// adjust based on if too fast or too slow or don't know
-		if (errorDiagnosticResults.nSpeedDiff == -2) // reversed
-		{
-			copy->throttleAdjust = FMath::RandRange(0.f, 0.02f);
-		}
-		else if (errorDiagnosticResults.nSpeedDiff == -1) // too slow
-		{
-			copy->throttleAdjust = FMath::RandRange(0.f, 0.02f);
-		}
-		else if (errorDiagnosticResults.nSpeedDiff == 1) // too fast
-		{
-			copy->throttleAdjust = FMath::RandRange(-0.02f, 0.f);
-		}
-		else
-		{
-			copy->throttleAdjust = FMath::RandRange(-0.02f, 0.02f);
-		}
+		//// adjust based on if too fast or too slow or don't know
+		//if (errorDiagnosticResults.nSpeedDiff == -2) // reversed
+		//{
+		//	copy->throttleAdjust = FMath::RandRange(0.f, 0.02f);
+		//}
+		//else if (errorDiagnosticResults.nSpeedDiff == -1) // too slow
+		//{
+		//	copy->throttleAdjust = FMath::RandRange(0.f, 0.02f);
+		//}
+		//else if (errorDiagnosticResults.nSpeedDiff == 1) // too fast
+		//{
+		//	copy->throttleAdjust = FMath::RandRange(-0.02f, 0.f);
+		//}
+		//else
+		//{
+		//	copy->throttleAdjust = FMath::RandRange(-0.02f, 0.02f);
+		//}
+		copy->throttleAdjust = InputMapping->throttle[selectedIndex];
 		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Black, FString::Printf(TEXT("TrhottleAdjust %f"), copy->throttleAdjust));
 
 	}
 	if (errorDiagnosticResults.bTrySteer)
 	{
-		if (errorDiagnosticResults.nDrift == RIGHT)
-		{
-			copy->steerAdjust = FMath::RandRange(-0.08f, 0.f);
-		}
-		else if (errorDiagnosticResults.nDrift == LEFT)
-		{
-			copy->steerAdjust = FMath::RandRange(0.f, 0.05f);
-		}
-		else
-		{
-			// don't know which way drifting
-			copy->steerAdjust = FMath::RandRange(-0.1f, 0.0f); // TODO change these values back
-		}
+		//if (errorDiagnosticResults.nDrift == RIGHT)
+		//{
+		//	copy->steerAdjust = FMath::RandRange(-0.08f, 0.f);
+		//}
+		//else if (errorDiagnosticResults.nDrift == LEFT)
+		//{
+		//	copy->steerAdjust = FMath::RandRange(0.f, 0.05f);
+		//}
+		//else
+		//{
+		//	// don't know which way drifting
+		//	copy->steerAdjust = FMath::RandRange(-0.1f, 0.0f); // TODO change these values back
+		//}
+		copy->steerAdjust = InputMapping->steer[selectedIndex];
 		GEngine->AddOnScreenDebugMessage(-1, 20.f, FColor::Black, FString::Printf(TEXT("SteerAdjust %f"), copy->steerAdjust));
 
 	}
